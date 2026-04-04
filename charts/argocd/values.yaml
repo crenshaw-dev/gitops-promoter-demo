@@ -1,0 +1,24 @@
+argo-cd:
+  server:
+    extraArgs:
+      - --insecure
+    ingress:
+      enabled: true
+      ingressClassName: nginx
+      hostname: demo.gitops-promoter.dev
+      tls: true
+
+  configs:
+    params:
+      server.disable.auth: "false"
+    rbac:
+      policy.default: role:readonly
+      policy.csv: |
+        g, crenshaw-dev:gitops-promoter-maintainers, role:admin
+    cm:
+      extension.config: |
+        extensions:
+          - name: gitops-promoter
+            backend:
+              services:
+                - url: http://gitops-promoter-ui.gitops-promoter.svc.cluster.local
