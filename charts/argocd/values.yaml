@@ -1,21 +1,28 @@
 argo-cd:
+  global:
+    domain: demo.gitops-promoter.dev
+
   server:
-    extraArgs:
-      - --insecure
     ingress:
       enabled: true
       ingressClassName: nginx
       hostname: demo.gitops-promoter.dev
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+        nginx.ingress.kubernetes.io/backend-protocol: HTTP
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
       tls: true
 
   configs:
     params:
       server.disable.auth: "false"
+      server.insecure: "true"
     rbac:
       policy.default: role:readonly
       policy.csv: |
         g, crenshaw-dev:gitops-promoter-maintainers, role:admin
     cm:
+      url: https://demo.gitops-promoter.dev
       extension.config: |
         extensions:
           - name: gitops-promoter
