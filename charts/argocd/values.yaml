@@ -50,7 +50,7 @@ argo-cd:
       policy.default: role:readonly
       # Group = org slug + GitHub team slug (teamNameField: slug in dex.config).
       policy.csv: |
-        g, crenshaw-dev:gitops-promoter-maintainers, role:admin
+        g, argoproj-labs:gitops-promoter-approvers, role:admin
     cm:
       url: https://demo.gitops-promoter.dev
       # Embedded Dex → GitHub (OAuth App). Client ID/secret: Secret/argocd-dex-github (SealedSecret).
@@ -65,10 +65,12 @@ argo-cd:
               clientSecret: $argocd-dex-github:clientSecret
               # Use GitHub team slugs so RBAC `g, org:team-slug, role:admin` matches claims.
               teamNameField: slug
-              # Org only: any org member can complete OAuth. Listing `teams` under an org
-              # requires membership in those teams and causes a generic "login failed" otherwise.
+              # Org argoproj-labs + team gitops-promoter-approvers (slug). OAuth app must be
+              # approved for argoproj-labs so Dex can read org/team membership.
               orgs:
-                - name: crenshaw-dev
+                - name: argoproj-labs
+                  teams:
+                    - gitops-promoter-approvers
       resource.customLabels: promoter.argoproj.io/commit-status
       resource.links: |
         - url: '{{.resource.status.url}}'

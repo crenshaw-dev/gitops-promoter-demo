@@ -383,7 +383,7 @@ In GitHub: **Settings** → **Developer settings** → **OAuth Apps** → **New 
 
 Under the app, create a **client secret**.
 
-**Org access (required for org-based login):** GitHub will not let Dex read org or team membership until the OAuth app is allowed for that org. As an org owner (or member who can approve), open **Organization** → **Settings** → **Third-party access** (or **Personal settings** → **Applications** → **Authorized OAuth Apps** and complete the org grant flow). Without this, Dex often fails with a generic **login failed** in the UI. See Dex’s [GitHub connector caveats](https://dexidp.io/docs/connectors/github/).
+**Org access (required for org-based login):** GitHub will not let Dex read org or team membership until the OAuth app is allowed for that org. For this demo, **`argoproj-labs`** org owners must approve the app under **Organization `argoproj-labs`** → **Settings** → **Third-party access** (or users complete the org grant when authorizing). Without this, Dex logs **`application not authorized to read org data`** and the UI shows **login failed**. See Dex’s [GitHub connector caveats](https://dexidp.io/docs/connectors/github/).
 
 **2. Seal credentials into the repo (exact path)**
 
@@ -408,9 +408,8 @@ Until that **`Secret`** exists, Dex may log errors about missing client credenti
 
 **3. Align org, team claims, and RBAC**
 
-- **`dex.config`** lists **orgs** only: any **member** of that org can finish GitHub OAuth. (If you add **`teams`** under an org, Dex **rejects** users who are not in those teams—often as an unhelpful **login failed**.)
-- **`teamNameField: slug`** makes group claims use the GitHub **team slug** (for example **`crenshaw-dev:gitops-promoter-maintainers`**), which must match the **`g, …`** lines in **`argo-cd.configs.rbac.policy.csv`**.
-- Users in the org but **not** in that team get **`policy.default`** (here, **readonly**), not **admin**.
+- This demo’s **`dex.config`** requires org **`argoproj-labs`** and team **`gitops-promoter-approvers`** (GitHub slug). Only members of that team can finish OAuth; others fail at Dex (often as **login failed**). The OAuth app must be **approved for `argoproj-labs`** so Dex can read org/team data.
+- **`teamNameField: slug`** makes group claims use the team slug (**`argoproj-labs:gitops-promoter-approvers`**), which must match the **`g, …`** line in **`argo-cd.configs.rbac.policy.csv`** (**`role:admin`** here).
 
 If you fork the repo, update the **`orgs`** entry, the **`g, org:team-slug, role:admin`** line, and your GitHub OAuth app’s callback URL for your real hostname.
 
@@ -425,7 +424,7 @@ kubectl -n argocd logs deploy/argocd-dex-server --tail=80
 kubectl -n argocd logs deploy/argocd-server --tail=80
 ```
 
-Look for GitHub OAuth errors, **organization** access, or unresolved **`$…`** placeholders in config (secret indirection broken).
+Look for GitHub OAuth errors, **`application not authorized to read org data`**, or unresolved **`$…`** placeholders in config (secret indirection broken).
 
 **5. Optional: disable the local `admin` user**
 
