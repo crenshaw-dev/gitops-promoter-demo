@@ -25,7 +25,9 @@ kube-prometheus-stack:
 
   grafana:
     enabled: true
-    # Omit adminPassword to let the chart create a random one in Secret (retrieve for break-glass).
+    # No local admin user or Secret: avoids per-render random admin-password (GitOps drift) and matches OAuth-only access.
+    env:
+      GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION: "true"
     ingress:
       enabled: true
       ingressClassName: nginx
@@ -55,6 +57,10 @@ kube-prometheus-stack:
     grafana.ini:
       server:
         root_url: https://grafana.gitops-promoter.dev
+      auth:
+        disable_login_form: true
+      auth.basic:
+        enabled: false
       auth.github:
         enabled: true
         allow_sign_up: true

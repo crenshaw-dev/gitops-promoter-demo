@@ -519,11 +519,7 @@ kubectl create secret generic grafana-github-oauth -n monitoring \
 
 If this repository’s **`grafana-github-oauth.sealed.yaml`** was generated from **Dex**’s **`Secret`**, it is the **wrong** GitHub OAuth client for Grafana’s redirect URL—**overwrite** it with a seal from the **Grafana-only** OAuth app above.
 
-Grafana’s deployment references **`Secret/grafana-github-oauth`** as **required** env vars, so the Grafana pod stays **Pending** until the **`SealedSecret`** is applied and unsealed (clear failure mode if the file is missing or the key does not match this cluster). After it is running, retrieve the random **admin** password with:
-
-```bash
-kubectl get secret -n monitoring mon-grafana -o jsonpath='{.data.admin-password}' | base64 -d && echo
-```
+Grafana’s deployment references **`Secret/grafana-github-oauth`** as **required** env vars, so the Grafana pod stays **Pending** until the **`SealedSecret`** is applied and unsealed (clear failure mode if the file is missing or the key does not match this cluster). **Use Sign in with GitHub only:** **`charts/monitoring/values.yaml`** turns off the built-in **`admin`** user (**`GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION`**) and password UI (**`[auth] disable_login_form`**, **`[auth.basic] enabled = false`**), so Helm no longer emits a chart-managed **`Secret`** whose random **`admin-password`** would change every hydration and keep Argo CD **OutOfSync**.
 
 **Customize** Grafana hostname and **`auth.github.allowed_organizations`** in **`charts/monitoring/values.yaml`** (keep **`ingress`**, **`tls`**, and **`grafana.ini.server.root_url`** consistent).
 
