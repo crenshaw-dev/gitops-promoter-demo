@@ -32,6 +32,8 @@ spec:
       app.kubernetes.io/name: guestbook
   template:
     metadata:
+      annotations:
+        guestbook.demo/gitops-promoter-churn: "1970-01-01T00:00:00Z"
       labels:
         app.kubernetes.io/instance: guestbook-e2e
         app.kubernetes.io/name: guestbook
