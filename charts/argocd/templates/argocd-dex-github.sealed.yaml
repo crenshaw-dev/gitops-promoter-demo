@@ -4,6 +4,8 @@ kind: SealedSecret
 metadata:
   name: argocd-dex-github
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
 spec:
   encryptedData:
     clientId: AgDNpo0AfGx1SP0Su8PuYQa/bOxFNe0LwQOHSAv1m236QQsmDQRDs+Ruso0zB1g894DEYJjL/+e2h0SeqeV4El4YmjVG+/5byo4fymeGDTqZEIX/+Uuvu/0cuz5usF6DjimsIgT/Avvm/ns3UsE2Yxjcm6vNlZEgau+yiRPdy1KWiTWLQIMwuI6WeHHYnW6lbvXRR0rNivvai7ViCBom94LmdAp59UcMwozYDnuf5ynoiLKlDCqwBOI3naDvj2NABxjHWp6ww1RRMvMSjIgX2GgwSJoGpCggE375tHNpXW9ARxjWIOSEENm1g+WcQtho6mpiTjzO5sVB6G+pV4U4hZgzhi+Dn42w4NaYvUdSoacAizGKTCxpD9OQdr9a/vlcaZ2nkOCxCREt8QgB9p5dS+LZZMssVKG25B32ns054Vo0YjvqHQ0+qJQlzbPQ72R0TLqO95hrhOxiMIKTMKRNsqAEzx36l2HC811vNhCftggGn3ynuoFXdDHrv65GERcShghSoUXUyD20P3A1A6xvzaxGm9oufKxHMZugRxDBodiNCt1NMLW+Piz8c7IlhtmEK+oid1TzYXA3ep+dKjD2MW1jC4gO28W97ZoPrahBpB7yu9+J3F2gOTbERy/pPNvwhcxxpIbbR7Ysxb0pnuCBprSc0Wvzl/OKE+lCokYOPI7xxjLR7maMco5Mzdmu1fBCXDq81qyHvLuq8bRkydxoKql4xRDidQ==

@@ -44,8 +44,8 @@ argo-cd:
   configs:
     # GitHub webhook HMAC: indirection only (safe in Git). Argo CD reads the literal
     # "$<secret>:<key>" from argocd-secret and resolves the value from that Secret at runtime.
-    # Target Secret: seal and commit manifests/argocd-github-webhook/argocd-github-webhook.sealed.yaml
-    # (Argo CD Application argocd-github-webhook).
+    # Target Secret: seal and commit charts/argocd/templates/argocd-github-webhook.sealed.yaml
+    # (same Argo CD Application as the argocd umbrella chart).
     secret:
       githubSecret: "$argocd-github-webhook:githubWebhookSecret"
     params:

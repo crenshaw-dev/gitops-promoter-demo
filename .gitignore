@@ -14,5 +14,5 @@
 # Helm dependency packages (rebuild with helm dependency build)
 charts/**/charts/*.tgz
 
-# GitHub App PEMs for GitOps Promoter — seal into promoter-config/secrets/; never commit plaintext
+# GitHub App PEMs for GitOps Promoter — seal into charts/gitops-promoter/templates/; never commit plaintext
 promoter-config/**/*.pem

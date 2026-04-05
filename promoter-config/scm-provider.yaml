@@ -11,6 +11,6 @@ spec:
     # can discover installations (see https://gitops-promoter.readthedocs.io/en/latest/getting-started/).
     # installationID: 12345678
   secretRef:
-    # PEM lives in SealedSecret → Secret; see README §12 (promoter-config/secrets/).
+    # PEM lives in SealedSecret → Secret; see README §12 (charts/gitops-promoter/templates/).
     name: github-app-credentials
 
