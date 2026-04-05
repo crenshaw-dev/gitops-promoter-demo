@@ -48,29 +48,25 @@ argo-cd:
       server.insecure: "true"
     rbac:
       policy.default: role:readonly
-      # Group = org slug + GitHub team slug (teamNameField: slug in dex.config).
+      # Group claim is org:team per Dex default (GitHub team name). Must match token groups.
       policy.csv: |
         g, argoproj-labs:gitops-promoter-approvers, role:admin
     cm:
       url: https://demo.gitops-promoter.dev
-      # Embedded Dex → GitHub (OAuth App). Client ID/secret: Secret/argocd-dex-github (SealedSecret).
+      # Embedded Dex → GitHub (same shape as upstream Argo CD demo; client ID/secret in Secret/argocd-dex-github).
       # https://argo-cd.readthedocs.io/en/stable/operator-manual/user-management/#configuring-github-oauth2
       dex.config: |
         connectors:
-          - type: github
-            id: github
-            name: GitHub
-            config:
-              clientID: $argocd-dex-github:clientId
-              clientSecret: $argocd-dex-github:clientSecret
-              # Use GitHub team slugs so RBAC `g, org:team-slug, role:admin` matches claims.
-              teamNameField: slug
-              # Org argoproj-labs + team gitops-promoter-approvers (slug). OAuth app must be
-              # approved for argoproj-labs so Dex can read org/team membership.
-              orgs:
-                - name: argoproj-labs
-                  teams:
-                    - gitops-promoter-approvers
+        - type: github
+          id: github
+          name: GitHub
+          config:
+            clientID: $argocd-dex-github:clientId
+            clientSecret: $argocd-dex-github:clientSecret
+            orgs:
+            - name: argoproj-labs
+              teams:
+              - gitops-promoter-approvers
       resource.customLabels: promoter.argoproj.io/commit-status
       resource.links: |
         - url: '{{.resource.status.url}}'

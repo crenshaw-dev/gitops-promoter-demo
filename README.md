@@ -408,10 +408,10 @@ Until that **`Secret`** exists, Dex may log errors about missing client credenti
 
 **3. Align org, team claims, and RBAC**
 
-- This demo’s **`dex.config`** requires org **`argoproj-labs`** and team **`gitops-promoter-approvers`** (GitHub slug). Only members of that team can finish OAuth; others fail at Dex (often as **login failed**). The OAuth app must be **approved for `argoproj-labs`** so Dex can read org/team data.
-- **`teamNameField: slug`** makes group claims use the team slug (**`argoproj-labs:gitops-promoter-approvers`**), which must match the **`g, …`** line in **`argo-cd.configs.rbac.policy.csv`** (**`role:admin`** here).
+- This demo’s **`dex.config`** matches the shape used in the upstream Argo CD project demo: org **`argoproj-labs`**, team **`gitops-promoter-approvers`**. Only members of that team can finish OAuth; others fail at Dex (often as **login failed**). The OAuth app must be **approved for `argoproj-labs`** so Dex can read org/team data.
+- Dex’s default **`teamNameField`** (**`name`**) controls how **`org:team`** appears in **`groups`**. The **`g, …`** line in **`argo-cd.configs.rbac.policy.csv`** must match that claim (often **`argoproj-labs:gitops-promoter-approvers`** when GitHub’s team name matches the slug). If you get **readonly** after login, adjust **`policy.csv`** to the actual group string.
 
-If you fork the repo, update the **`orgs`** entry, the **`g, org:team-slug, role:admin`** line, and your GitHub OAuth app’s callback URL for your real hostname.
+If you fork the repo, update the **`orgs`** / **`teams`** entries, the **`g, org:team, role:admin`** line, and your GitHub OAuth app’s callback URL for your real hostname.
 
 **4. If you still see “login failed”**
 
