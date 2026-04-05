@@ -1,8 +1,4 @@
 gitops-promoter:
-  controllerConfiguration:
-    promotionStrategyRequeueDuration: 10s
-    changeTransferPolicyRequeueDuration: 10s
-
   webhookReceiver:
     ingress:
       enabled: true
