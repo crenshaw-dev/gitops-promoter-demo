@@ -31,7 +31,7 @@ Later commits can add:
 
 - **`promoter-config/secrets/github-app-credentials.sealed.yaml`** (GitHub App PEM) and edits to **`promoter-config/scm-provider.yaml`** / **`git-repository.yaml`** (**§12**)
 - GitOps Promoter `ScmProvider`, `GitRepository`, and `PromotionStrategy` resources (already in repo; need real IDs and secret)
-- demo workload repository wiring
+- a sealed **repository-write** credential under **`manifests/argocd-repo-hydrator/`** so the hydrator can push to this repo (**§8**; for a **public** repo you can skip a separate pull secret), plus **`env/dev`**, **`env/e2e`**, **`env/prd`** and **`env/dev-next`**, **`env/e2e-next`**, **`env/prd-next`** so the hydrator and GitOps Promoter can run
 - **`manifests/argocd-github-webhook/argocd-github-webhook.sealed.yaml`** for the Argo CD Git webhook HMAC when using push-to-sync (see **§8**)
 - **`manifests/argocd-dex-github/argocd-dex-github.sealed.yaml`** for GitHub OAuth credentials used by embedded Dex (see **§9**)
 - monitoring and dashboards
@@ -39,9 +39,10 @@ Later commits can add:
 ## Repository layout
 
 - `apps/`: Argo CD `Application` objects
+- `demo-apps/guestbook/`: minimal in-tree Helm chart (Deployment + Service, **`gcr.io/google-samples/gb-frontend:v5`**). Guestbook **`Application`**s use [**source hydration**](https://argo-cd.readthedocs.io/en/stable/user-guide/source-hydrator/): Argo reads **`demo-apps/guestbook`** on **`HEAD`**, writes rendered YAML under **`hydrated/guestbook-{dev,e2e,prd}`** on each env’s **`env/<env>-next`** branch, and syncs from **`env/<env>`** after GitOps Promoter merges **`env/<env>-next` → `env/<env>`**. Per-env replica counts use **`demo-apps/guestbook/env/{dev,e2e,prd}/values.yaml`**
 - `charts/`: umbrella charts and Helm values (each chart may include `Chart.lock` from `helm dependency build`)
-- `manifests/`: raw Kubernetes manifests applied by Argo CD (top-level YAML is synced by **`demo-config`** into `gitops-promoter`; **`manifests/argocd-github-webhook/`** and **`manifests/argocd-dex-github/`** are synced into **`argocd`** by their Applications)
-- `promoter-config/`: GitOps Promoter CRs and (under **`promoter-config/secrets/`**) sealed **`Secret`** manifests applied with the same **`promoter-config`** Application into **`gitops-promoter`**
+- `manifests/`: raw Kubernetes manifests applied by Argo CD (top-level YAML is synced by **`demo-config`** into `gitops-promoter`; **`manifests/argocd-github-webhook/`**, **`manifests/argocd-dex-github/`**, and **`manifests/argocd-repo-hydrator/`** (Sealed **repository-write** Secret for hydrator push when this repo is public) are synced into **`argocd`** by their Applications)
+- `promoter-config/`: GitOps Promoter CRs and (under **`promoter-config/secrets/`**) sealed **`Secret`** manifests applied with the same **`promoter-config`** Application into **`gitops-promoter`**. One **`ArgoCDCommitStatus`** (**`commit-statuses/argocd-commit-status.yaml`**) selects all guestbook **`Application`**s via **`app.kubernetes.io/name: guestbook`**; the controller maps each app to an environment from **`spec.sourceHydrator.syncSource.targetBranch`** (hydrated guestbook apps) and emits **`argocd-health`** commit statuses ([docs](https://gitops-promoter.readthedocs.io/en/latest/commit-status-controllers/argocd/)). **`PromotionStrategy`** uses strategy-level **`activeCommitStatuses`** (**`argocd-health`**, **`timer`**) so ordering across envs also uses **`promoter-previous-environment`** ([gating](https://gitops-promoter.readthedocs.io/en/latest/gating-promotions/)).
 - `infra/gcp/terraform/`: Terraform for GCP networking and GKE
 - `infra/gcp/check-prereqs.sh`: local environment check script
 - `infra/gcp/get-ingress-lb-ip.sh`: print ingress-nginx load balancer IP for DNS A records
@@ -49,7 +50,7 @@ Later commits can add:
 
 ## Conventions
 
-- Argo CD applications use **single-source** `spec.source`, not multi-source apps.
+- Argo CD applications use **single-source** `spec.source`, not multi-source apps, **except** the guestbook env **`Application`**s, which use **`spec.sourceHydrator`** so GitOps Promoter can gate on hydrated branches ([source hydrator](https://argo-cd.readthedocs.io/en/stable/user-guide/source-hydrator/)).
 - Every `Application` under `apps/` uses **automated** sync with **`prune: true`** and **`selfHeal: true`** (including `root-app`).
 - Helm deployments come from **in-repo umbrella charts**.
 - Environment-specific values should live in ignored local files such as `terraform.tfvars`, not in committed source.
@@ -94,6 +95,8 @@ At minimum, update:
 - `apps/ingress-nginx.yaml`
 - `apps/sealed-secrets.yaml`
 - `apps/demo-config.yaml`
+- `apps/guestbook-dev.yaml`, `apps/guestbook-e2e.yaml`, `apps/guestbook-prd.yaml`
+- `apps/argocd-repo-hydrator.yaml`
 - `apps/argocd-github-webhook.yaml`
 - `apps/argocd-dex-github.yaml`
 - `apps/gitops-promoter.yaml`
@@ -340,6 +343,40 @@ If you omit the webhook secret entirely, hooks can still trigger a refresh, but 
 
 Push a trivial commit to the tracked branch. In the Argo CD UI, the Application should move to **Refreshing** quickly instead of waiting for the poll interval. In GitHub, open the webhook’s **Recent Deliveries** and confirm **`200`** responses.
 
+### Source hydrator credentials (push for in-tree guestbook)
+
+The guestbook **`Application`**s use Argo CD’s [**source hydrator**](https://argo-cd.readthedocs.io/en/stable/user-guide/source-hydrator/): Argo renders the in-tree chart under **`demo-apps/guestbook`**, **pushes** rendered manifests to **`env/<env>-next`** branches in **this** repository, and **syncs** the cluster from **`env/<env>`**. That matches GitOps Promoter’s hard-coded **`*-next`** convention ([getting started](https://gitops-promoter.readthedocs.io/en/latest/getting-started/#promotion-strategy)).
+
+Keeping the chart **in-tree** avoids a second GitHub repo: the hydrator’s dry source and hydrated output both live in **`gitops-promoter-demo`** (Argo does not support hydrating into a different repo yet — [issue #22719](https://github.com/argoproj/argo-cd/issues/22719)).
+
+This demo enables the hydrator in **`charts/argocd/values.yaml`** (**`commitServer.enabled: true`** and **`configs.params.hydrator.enabled: "true"`**). After the next Helm sync of Argo CD, the application controller and API server pick up **`argocd-cmd-params-cm`**.
+
+If this repository is **public**, Argo CD can **clone** the dry chart **without** a **`repository`** credential; you still need a **`repository-write`** **`Secret`** so the hydrator can **push**. Use a [**GitHub App**](https://argo-cd.readthedocs.io/en/stable/user-guide/source-hydrator/#using-the-source-hydrator) with **Contents** read/write—typically the **same** installation as GitOps Promoter’s **`ScmProvider`** (**§12**). The data keys are the usual Argo CD repository fields (**`type`**, **`url`**, **`githubAppID`**, **`githubAppPrivateKey`**, optional **`githubAppInstallationID`**).
+
+If the repository is **private**, add a second **`Secret`** with **`argocd.argoproj.io/secret-type: repository`** for the same URL (see the upstream hydrator doc’s pull/push pair).
+
+From the **repository root**, seal the **write** secret into **`manifests/argocd-repo-hydrator/`** (same **`kubeseal`** controller flags as **§8** Git webhook / **§9** Dex). Replace the App ID, optional installation ID, PEM path, and repo URL.
+
+```bash
+kubectl create secret generic argocd-repo-gitops-promoter-write -n argocd \
+  --from-literal=type=git \
+  --from-literal=url='https://github.com/<your-github-owner>/gitops-promoter-demo' \
+  --from-literal=githubAppID='YOUR_GITHUB_APP_ID' \
+  --from-file=githubAppPrivateKey=/path/to/your-github-app.private-key.pem \
+  --dry-run=client -o yaml \
+  | kubectl label --local --dry-run=client -f - argocd.argoproj.io/secret-type=repository-write -o yaml \
+  | kubectl label --local --dry-run=client -f - app.kubernetes.io/part-of=argocd -o yaml \
+  | kubeseal \
+      --controller-name sealed-secrets \
+      --controller-namespace kube-system \
+      -o yaml -n argocd \
+      -w manifests/argocd-repo-hydrator/argocd-repo-gitops-promoter-write.sealed.yaml
+```
+
+Commit that sealed file. The **`Application/argocd-repo-hydrator`** (**`apps/argocd-repo-hydrator.yaml`**, sync wave **2**) applies it before the guestbook apps (wave **5**). Until it exists, hydration cannot push and the guestbook applications will not reach a healthy sync.
+
+**Repository settings:** ensure GitHub does **not** auto-delete **`*-next`** branches when PRs merge (Promoter relies on them). Prefer disabling **Automatically delete head branches** or add branch protection for a pattern such as **`env/**`** ([Promoter note](https://gitops-promoter.readthedocs.io/en/latest/getting-started/#github-app-configuration)).
+
 **Not the GitOps Promoter webhook**
 
 This section is only for **Argo CD’s** Git notification endpoint (`/api/webhook` on the Argo CD host). **GitOps Promoter** uses a separate hostname (this demo: **`promoter-webhook.<your-domain>`**) and its own ingress—do not point the Argo CD Git webhook at that URL.
@@ -479,7 +516,7 @@ You should see these namespaces/components coming up:
 
 **Ingress admission webhook:** the ingress-nginx chart is configured so **cert-manager injects the CA** into `ValidatingWebhookConfiguration/ingress-nginx-admission` (`controller.admissionWebhooks.certManager.enabled`). After sync, `kubectl get validatingwebhookconfiguration ingress-nginx-admission -o jsonpath='{.webhooks[0].clientConfig.caBundle}' | wc -c` should print a **non-zero** length; if it stays empty, new `Ingress` objects can fail API validation.
 
-## 12. GitOps Promoter: GitHub App, sealed credentials, and config repo
+## 12. GitOps Promoter: GitHub App, sealed credentials, and Git repository
 
 The bootstrap install includes the controller (**`apps/gitops-promoter.yaml`**, wave **3**) and the **`promoter-config`** Application (wave **4**), which syncs **`promoter-config/`** recursively into **`gitops-promoter`**. Until you add a real GitHub App and secret, **`ScmProvider`** and friends will not be able to talk to GitHub.
 
@@ -492,12 +529,18 @@ Official reference: [GitOps Promoter getting started](https://gitops-promoter.re
 3. **Webhook (recommended):** set **Webhook URL** to **`https://promoter-webhook.<your-domain>/`** (same host as **`charts/gitops-promoter/values.yaml`** → **`webhookReceiver.ingress.hostname`**). Use the payload format GitHub defaults to unless the Promoter docs specify otherwise.
 4. **Webhook “secret” on GitHub:** GitHub lets you set a signing secret for repository webhooks, but the GitOps Promoter **webhook receiver does not verify** **`X-Hub-Signature-256`** (or similar) today — see [`internal/webhookreceiver/server.go`](https://github.com/argoproj-labs/gitops-promoter/blob/main/internal/webhookreceiver/server.go) in **v0.25.1** / **main**. Setting a secret in GitHub does not harden this endpoint until upstream adds verification. Mitigations: keep the URL non-obvious, restrict at ingress/network (allowlist GitHub IPs, internal-only URL, or a front proxy that validates signatures), and treat the receiver as **unauthenticated trigger** surface (it only enqueues reconcile when a matching **`ChangeTransferPolicy`** exists).
 5. Generate and download a **private key** (`.pem`).
-6. Note the app’s **App ID** (numeric). **Install** the app on the account or org that owns your repos and note **Installation ID** if you want to pin it (optional on `ScmProvider`; see **`promoter-config/scm-provider.yaml`**).
+6. Note the app’s **App ID** (numeric). **Install** the **GitHub App** on the user or organization that owns the repositories GitOps Promoter will use via the API (see below). Note **Installation ID** if you want to pin it (optional on `ScmProvider`; see **`promoter-config/scm-provider.yaml`**).
 
-### 12.2 Config repository and branches
+**Which repositories must the installation include?**
 
-1. Create the **config** repo named in **`promoter-config/git-repository.yaml`** (this demo: **`git-repository.yaml`** → **`crenshaw-dev/gitops-promoter-demo-config`** — change owner/name if you fork).
-2. **`promotion-strategy.yaml`** expects merge targets such as **`env/dev/live`**, **`env/staging/live`**, **`env/production/live`**. Your hydrator / promotion flow must match the [branch conventions](https://gitops-promoter.readthedocs.io/en/latest/getting-started/#promotion-strategy) the project documents (including **`*-next`** hydration branches where applicable). Align branch names here with what you actually create in Git.
+- **Required:** every GitHub repository the Promoter mutates via the API — at minimum, whatever you name in **`promoter-config/git-repository.yaml`** (this demo: **`owner/gitops-promoter-demo`** — the same repo as bootstrap). Install the GitHub App on that repo (or use **All repositories** in a sandbox).
+- **Argo CD** clones this repo (anonymous if **public**); the **hydrator push** **`Secret`** (**§8**) is still required to write hydrated commits. The **GitHub App** on **`ScmProvider`** is what Promoter uses for API access—often the same installation as the hydrator **write** secret.
+- When you click **Install**, choose **Only select repositories** and include the repo from **`git-repository.yaml`** and any other repos your **`PromotionStrategy`** targets. **All repositories** is simpler for sandboxes but broader than necessary.
+
+### 12.2 Repository and branches
+
+1. Use the GitHub repo named in **`promoter-config/git-repository.yaml`** (this demo: **`crenshaw-dev/gitops-promoter-demo`** — change **`owner`** / **`name`** if you fork under a different path).
+2. **`promotion-strategy.yaml`** expects merge targets **`env/dev`**, **`env/e2e`**, and **`env/prd`**. Your hydrator / promotion flow must match the [branch conventions](https://gitops-promoter.readthedocs.io/en/latest/getting-started/#promotion-strategy) the project documents (including **`env/<env>-next`** hydration branches). Align branch names here with what you actually create in Git.
 
 ### 12.3 Seal the GitHub App private key (same Application as promoter CRs)
 
@@ -522,7 +565,7 @@ Commit **`promoter-config/secrets/github-app-credentials.sealed.yaml`**. The **`
 
 Edit **`promoter-config/scm-provider.yaml`**: set **`spec.github.appID`** to your numeric App ID. Uncomment and set **`installationID`** only if you need to pin a single installation.
 
-Edit **`promoter-config/git-repository.yaml`** if **`owner`** / **`name`** differ from your config repo.
+Edit **`promoter-config/git-repository.yaml`** if **`owner`** / **`name`** differ from the GitHub repository that holds **`demo-apps/guestbook`** and the **`env/...`** promotion branches (normally your **`gitops-promoter-demo`** fork).
 
 Push; after sync, **`kubectl -n gitops-promoter get sealedsecret,secret,scmprovider`** should show the decoded **`Secret`** and a healthy **`ScmProvider`**.
 
@@ -534,8 +577,8 @@ Push; after sync, **`kubectl -n gitops-promoter get sealedsecret,secret,scmprovi
 
 ### 12.6 Checklist (other prerequisites)
 
-1. Create GitHub App and install it; configure webhook host to **`promoter-webhook.<your-domain>`** when ingress is ready.
-2. Create config repo and branches consistent with **`promotion-strategy.yaml`**.
+1. Create GitHub App, **install** it with access to the repo in **`git-repository.yaml`** (see **§12.1**); configure webhook host to **`promoter-webhook.<your-domain>`** when ingress is ready.
+2. Ensure branches in that repo match **`promotion-strategy.yaml`** (and your hydrator).
 3. Seal and commit **`promoter-config/secrets/github-app-credentials.sealed.yaml`**.
 4. Set **`appID`** (and optionally **`installationID`**) in **`promoter-config/scm-provider.yaml`**; fix **`git-repository.yaml`** owner/name.
 5. Optional: **§8** / **§9** sealed files for Argo CD.
@@ -545,14 +588,16 @@ Push; after sync, **`kubectl -n gitops-promoter get sealedsecret,secret,scmprovi
 A clean sequence is:
 
 1. **Bootstrap commit**
-   - `apps/` (includes **`apps/argocd-github-webhook.yaml`** and **`apps/argocd-dex-github.yaml`**; sealed credential files can land in follow-up commits)
+   - `apps/` (includes **`apps/argocd-repo-hydrator.yaml`**, **`apps/argocd-github-webhook.yaml`**, and **`apps/argocd-dex-github.yaml`**; sealed credential files can land in follow-up commits)
    - `charts/`
-   - `manifests/`
+   - `manifests/` (including **`manifests/argocd-repo-hydrator/`** once the hydrator **repository-write** secret is sealed)
 2. **Promoter config + secrets commit**
    - `apps/promoter-config.yaml`
    - `promoter-config/` (including **`promoter-config/secrets/github-app-credentials.sealed.yaml`** when the GitHub App exists)
    - other sealed secrets as needed (**`manifests/argocd-github-webhook/…`**, **`manifests/argocd-dex-github/…`**)
-3. **Monitoring and demo workloads commit**
+3. **Demo workloads commit**
+   - `demo-apps/guestbook/` and **`apps/guestbook-dev.yaml`**, **`apps/guestbook-e2e.yaml`**, **`apps/guestbook-prd.yaml`**
+4. **Monitoring commit** (optional)
 
 This keeps the cluster bring-up simple and avoids introducing broken credentials too early.
 

@@ -7,8 +7,8 @@ spec:
   promotionStrategyRef:
     name: demo
   environments:
-    - branch: env/staging/live
+    - branch: env/e2e
       duration: 5m
-    - branch: env/production/live
+    - branch: env/prd
       duration: 5m
 

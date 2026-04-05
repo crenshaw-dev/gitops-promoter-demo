@@ -6,18 +6,18 @@ metadata:
 spec:
   gitRepositoryRef:
     name: demo-config
+  # Keys must match controllers: ArgoCDCommitStatus → argocd-health; TimedCommitStatus → timer
+  # (see https://gitops-promoter.readthedocs.io/en/latest/gating-promotions/).
+  activeCommitStatuses:
+    - key: argocd-health
+    - key: timer
+  proposedCommitStatuses:
+    - key: git-commit-check
   environments:
-    - branch: env/dev/live
+    - branch: env/dev
       autoMerge: true
-    - branch: env/staging/live
+    - branch: env/e2e
       autoMerge: true
-      activeCommitStatuses:
-        - key: argocd-dev-healthy
-        - key: timed-5m
-    - branch: env/production/live
+    - branch: env/prd
       autoMerge: true
-      activeCommitStatuses:
-        - key: argocd-staging-healthy
-        - key: timed-5m
-        - key: git-commit-check
 

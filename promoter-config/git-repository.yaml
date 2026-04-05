@@ -6,8 +6,7 @@ metadata:
 spec:
   github:
     owner: crenshaw-dev
-    name: gitops-promoter-demo-config
+    name: gitops-promoter-demo
   scmProviderRef:
     kind: ScmProvider
     name: demo-scm
-

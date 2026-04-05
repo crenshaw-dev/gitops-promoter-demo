@@ -1,0 +1,14 @@
+# Placeholder so the argocd-repo-hydrator Application always has something to sync.
+# Add argocd-repo-gitops-promoter-write.sealed.yaml next to this file
+# (see README §8, “Source hydrator credentials”). You may delete this ConfigMap afterward.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-repo-hydrator-notes
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+data:
+  next-steps: |
+    For a public repo, Argo CD clones the dry chart without credentials; seal only a
+    repository-write Secret so the hydrator can push (see README §8).

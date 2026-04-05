@@ -2,6 +2,11 @@ argo-cd:
   global:
     domain: demo.gitops-promoter.dev
 
+  # Source hydrator (alpha): renders dry manifests and pushes to Git; required for GitOps Promoter’s
+  # Argo CD integration. See https://argo-cd.readthedocs.io/en/stable/user-guide/source-hydrator/
+  commitServer:
+    enabled: true
+
   server:
     ingress:
       enabled: true
@@ -46,6 +51,8 @@ argo-cd:
     params:
       server.disable.auth: "false"
       server.insecure: "true"
+      # Enables hydrator controller + commit server wiring in argo-helm (restart app controller / API server on change).
+      hydrator.enabled: "true"
     rbac:
       policy.default: role:readonly
       # Group claim is org:team per Dex default (GitHub team name). Must match token groups.
