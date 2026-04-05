@@ -1,6 +1,6 @@
 {
   "repoURL": "https://github.com/crenshaw-dev/gitops-promoter-demo",
-  "drySha": "516aa5fc6e6a0eb9e81648017df543bbd9ef508b",
+  "drySha": "c40f8bfaa7e5e17d25d9b9d4c7bea74f467740d3",
   "commands": [
     "helm template . --name-template guestbook-prd --namespace guestbook-prd --values ./demo-apps/guestbook/env/prd/values.yaml --include-crds"
   ]
