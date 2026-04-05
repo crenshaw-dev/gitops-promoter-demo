@@ -38,11 +38,12 @@ Later commits can add:
 ## Repository layout
 
 - `apps/`: Argo CD `Application` objects
-- `charts/`: umbrella charts and Helm values
+- `charts/`: umbrella charts and Helm values (each chart may include `Chart.lock` from `helm dependency build`)
 - `manifests/`: raw Kubernetes manifests applied by Argo CD
 - `promoter-config/`: GitOps Promoter CRs
 - `infra/gcp/terraform/`: Terraform for GCP networking and GKE
 - `infra/gcp/check-prereqs.sh`: local environment check script
+- `infra/gcp/get-ingress-lb-ip.sh`: print ingress-nginx load balancer IP for DNS A records
 - `docs/`: architecture notes
 
 ## Conventions
@@ -50,6 +51,9 @@ Later commits can add:
 - Argo CD applications use **single-source** `spec.source`, not multi-source apps.
 - Helm deployments come from **in-repo umbrella charts**.
 - Environment-specific values should live in ignored local files such as `terraform.tfvars`, not in committed source.
+- **GitOps first:** change the cluster by committing to this repository and letting Argo CD sync. Avoid `kubectl apply`, `kubectl patch`, or ad-hoc edits to workloads except in a real break-glass situation (for example, Argo CD cannot reconcile and you need a one-time repair).
+- **After any break-glass change:** update the matching manifests or Helm values here and push **before** you consider the incident closed, so the next sync does not fight the cluster or reintroduce the failure.
+- **Bootstrap exception:** the very first Argo CD install still uses a one-time `helm template` | `kubectl apply` from `charts/argocd` (see [§7](#7-bootstrap-argo-cd-once)); everything after that should flow from Git.
 
 ## Prerequisites
 
@@ -169,7 +173,46 @@ Terraform creates:
 - a regional GKE cluster
 - a managed node pool with autoscaling
 
-## 6. Fetch kubeconfig
+## 6. Fetch kubeconfig and verify `kubectl`
+
+Use the same Google identity that has access to the GKE cluster (the account you use in the Cloud Console).
+
+### 6.1 Sign in with the Google Cloud CLI
+
+If you are not already logged in, or your tokens expired:
+
+```bash
+gcloud auth login
+```
+
+If you use several Google accounts on one machine, sign in to the one that should touch this cluster (replace the address with yours):
+
+```bash
+gcloud auth login <your-google-account>
+```
+
+Confirm the account you intend to use:
+
+```bash
+gcloud auth list
+gcloud config set account <your-google-account>
+```
+
+### 6.2 Point `gcloud` at the right project
+
+```bash
+gcloud config set project <project-id>
+```
+
+To discover cluster name and location (regional clusters use `--region`; zonal clusters use `--zone`):
+
+```bash
+gcloud container clusters list --project <project-id>
+```
+
+### 6.3 Merge cluster credentials into kubeconfig
+
+For a **regional** cluster:
 
 ```bash
 gcloud container clusters get-credentials <cluster-name> \
@@ -177,25 +220,49 @@ gcloud container clusters get-credentials <cluster-name> \
   --project <project-id>
 ```
 
-Verify cluster access:
+For a **zonal** cluster, use `--zone <zone>` instead of `--region`.
+
+This updates your kubeconfig and sets the current context to that cluster.
+
+### 6.4 Application Default Credentials (optional but recommended)
+
+If `kubectl` or other tools warn that the quota project on Application Default Credentials does not match your GCP project, align it:
 
 ```bash
+gcloud auth application-default set-quota-project <project-id>
+```
+
+(You may have already run `gcloud auth application-default login` in **section 3** for Terraform; the quota project can still be set separately.)
+
+### 6.5 Verify access
+
+```bash
+kubectl config current-context
 kubectl get nodes
 ```
 
-If your GKE auth plugin is missing, install `gke-gcloud-auth-plugin` and retry.
+On first use, GKE may install a matching `kubectl` client version automatically. If authentication fails, install the plugin and retry:
+
+```bash
+gcloud components install gke-gcloud-auth-plugin
+```
 
 ## 7. Bootstrap Argo CD once
 
-Install Argo CD directly once, then let it self-manage from this repository.
+Install Argo CD once from **this repository’s Helm chart** (same version and values as the `argocd` Application), then hand off to GitOps. Server-side apply avoids CRD `last-applied-configuration` size limits and matches how large manifests are applied safely.
+
+From the repository root, with `helm` and `kubectl` configured for the cluster:
 
 ```bash
 kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-kubectl apply --server-side -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+cd charts/argocd
+helm dependency build
+helm template argocd . -f values.yaml --namespace argocd \
+  | kubectl apply --server-side --force-conflicts --field-manager=argocd-bootstrap -f -
+cd ../..
 ```
 
-The second apply uses server-side apply to avoid CRD annotation size issues on fresh installs.
+The release name **`argocd`** must match the Argo CD Helm release the `argocd` Application expects so labels and selectors stay consistent.
 
 ## 8. Hand off to GitOps
 
@@ -216,15 +283,16 @@ kubectl -n argocd get secret argocd-initial-admin-secret \
   -o jsonpath="{.data.password}" | base64 --decode && echo
 ```
 
-Start a local port-forward:
+Start a local port-forward to the Service’s **HTTP** port. With TLS terminated at the Ingress, the Argo CD API server runs **plain HTTP** on the pod; forwarding to the Service port named **`https` (443)** still reaches that HTTP listener, so a browser at `https://localhost:…` will try TLS and the connection will fail. Use the **`http`** port (80) and open **`http://`**, not `https://`.
 
 ```bash
-kubectl -n argocd port-forward svc/argocd-server 8080:443
+kubectl -n argocd port-forward svc/argocd-server 8080:http
+# equivalent: ... 8080:80
 ```
 
 Then open:
 
-- `https://localhost:8080`
+- `http://localhost:8080`
 
 Login with:
 
@@ -233,19 +301,28 @@ Login with:
 
 ## 10. Create DNS records
 
-After `ingress-nginx` is running, get its public IP:
+After `ingress-nginx` is running, read the load balancer **IPv4** address (what your A records must target):
 
 ```bash
-kubectl -n ingress-nginx get svc
+./infra/gcp/get-ingress-lb-ip.sh
 ```
 
-Create A records in your DNS provider for:
+Equivalent one-liner:
+
+```bash
+kubectl get svc -n ingress-nginx ingress-nginx-controller \
+  -o jsonpath='{.status.loadBalancer.ingress[0].ip}{"\n"}'
+```
+
+If the script errors, the Service may still show `<pending>` under `EXTERNAL-IP`; wait and retry. Use `kubectl -n ingress-nginx get svc` for full status.
+
+This repository assumes DNS for your domain is **not** in Google Cloud DNS (no managed zone is created by Terraform here). Create A records in **your DNS provider** (registrar, Cloudflare, Route 53, and so on):
 
 - `demo.<your-domain>`
 - `promoter-webhook.<your-domain>`
 - `grafana.<your-domain>`
 
-Point them at the ingress controller load balancer IP.
+Point each hostname at the ingress IP from the script. TTL around 300 seconds is reasonable while validating TLS.
 
 ## 11. Verify bootstrap components
 
@@ -268,6 +345,8 @@ You should see these namespaces/components coming up:
 - `ingress-nginx`
 - `kube-system` / Sealed Secrets
 - `gitops-promoter`
+
+**Ingress admission webhook:** the ingress-nginx chart is configured so **cert-manager injects the CA** into `ValidatingWebhookConfiguration/ingress-nginx-admission` (`controller.admissionWebhooks.certManager.enabled`). After sync, `kubectl get validatingwebhookconfiguration ingress-nginx-admission -o jsonpath='{.webhooks[0].clientConfig.caBundle}' | wc -c` should print a **non-zero** length; if it stays empty, new `Ingress` objects can fail API validation.
 
 ## 12. Add GitOps Promoter credentials and config
 

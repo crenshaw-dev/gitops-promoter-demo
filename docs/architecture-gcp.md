@@ -8,7 +8,7 @@ This document captures the cloud assumptions for the demo instance on Google Clo
 - Provisioning: Terraform (project, APIs, network, cluster)
 - DNS: Provider-managed DNS zone for demo hostnames
 - TLS: cert-manager using ACME HTTP-01 via ingress-nginx
-- Ingress: ingress-nginx (to stay close to the existing plan)
+- Ingress: ingress-nginx (to stay close to the existing plan), with cert-manager **CA injection** for the ingress admission `ValidatingWebhookConfiguration` so `clientConfig.caBundle` stays populated under GitOps
 - Secrets at rest in Git: Sealed Secrets
 - Workload identity: GKE Workload Identity for in-cluster controllers
 

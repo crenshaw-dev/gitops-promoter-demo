@@ -10,3 +10,6 @@
 **/crash.log
 **/*.tfvars
 **/*tfplan*
+
+# Helm dependency packages (rebuild with helm dependency build)
+charts/**/charts/*.tgz

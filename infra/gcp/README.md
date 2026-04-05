@@ -13,12 +13,20 @@ Use this file to pin environment-specific values before provisioning.
 
 ## DNS model
 
-- DNS stays with your DNS provider.
+- DNS stays with your DNS provider (Terraform does not create a Cloud DNS zone in this demo).
+- After `ingress-nginx` has an external IP, print the address to use for A records:
+
+  ```bash
+  ./get-ingress-lb-ip.sh
+  ```
+
+  Run from `infra/gcp`, with `kubectl` already configured for the cluster.
+
 - Create/maintain A records in your DNS provider for:
   - `demo.gitops-promoter.dev`
   - `promoter-webhook.gitops-promoter.dev`
   - `grafana.gitops-promoter.dev`
-- Point them at the ingress load balancer IP after bootstrap.
+- Point them at that ingress load balancer IP.
 
 ## IAM and API prerequisites
 
