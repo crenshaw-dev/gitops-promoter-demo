@@ -1,8 +1,7 @@
 {
   "repoURL": "https://github.com/crenshaw-dev/gitops-promoter-demo",
-  "drySha": "766eb0ebcf4b92d6427dcaa932e549c339663d96",
-  "author": "Michael Crenshaw <350466+crenshaw-dev@users.noreply.github.com>",
-  "date": "2026-04-05T19:23:49Z",
-  "subject": "fix bump logic",
-  "body": "Signed-off-by: Michael Crenshaw <350466+crenshaw-dev@users.noreply.github.com>\n"
+  "drySha": "00061aead13b31c828be71f56975d960f49d4163",
+  "author": "gitops-promoter-demo-repo[bot] <273831330+gitops-promoter-demo-repo[bot]@users.noreply.github.com>",
+  "date": "2026-04-05T19:30:09Z",
+  "subject": "chore: promoter demo churn 2026-04-05T19:30:09Z"
 }
