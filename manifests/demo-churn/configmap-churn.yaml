@@ -91,9 +91,10 @@ data:
 
     def bump_demo_churn_timestamp(yaml_text: str, iso: str) -> str:
         """Replace demoChurn.lastBumped in shared guestbook values (one match required)."""
+        # Use \\g<n> — not \\1{iso}\\2. Digits after \\1 are parsed as octal (\\120 → 'P'), corrupting timestamps.
         new_text, n = re.subn(
             r'(lastBumped:\s*")[^"]*(")',
-            rf"\1{iso}\2",
+            rf"\g<1>{iso}\g<2>",
             yaml_text,
             count=1,
         )
