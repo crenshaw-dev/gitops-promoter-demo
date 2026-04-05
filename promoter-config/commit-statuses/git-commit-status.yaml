@@ -9,5 +9,5 @@ spec:
   key: git-commit-check
   description: "Commit subject must start with 'chore:'"
   target: proposed
-  expression: 'Commit.Subject.startsWith("chore:")'
+  expression: 'Commit.Subject startsWith "chore:"'
 
