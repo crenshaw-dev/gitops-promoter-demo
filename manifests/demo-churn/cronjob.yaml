@@ -1,5 +1,5 @@
 # Pushes trivial commits to the bootstrap repo using the same GitHub App write Secret as the Argo CD source hydrator.
-# Requires Secret/argocd-repo-gitops-promoter-write (see README §8).
+# Requires Secret/argocd-repo-gitops-promoter-write (see SETUP.md §8).
 apiVersion: batch/v1
 kind: CronJob
 metadata:

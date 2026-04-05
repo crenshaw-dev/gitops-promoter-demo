@@ -9,13 +9,13 @@ This document captures the cloud assumptions for the demo instance on Google Clo
 - DNS: Provider-managed DNS zone for demo hostnames
 - TLS: cert-manager using ACME HTTP-01 via ingress-nginx
 - Ingress: ingress-nginx (to stay close to the existing plan), with cert-manager **CA injection** for the ingress admission `ValidatingWebhookConfiguration` so `clientConfig.caBundle` stays populated under GitOps
-- Secrets at rest in Git: Sealed Secrets (including the Argo CD Git webhook HMAC via a companion `Secret` and indirection — see README, Git webhooks)
+- Secrets at rest in Git: Sealed Secrets (including the Argo CD Git webhook HMAC via a companion `Secret` and indirection — see [SETUP.md](../SETUP.md) §8)
 - Workload identity: GKE Workload Identity for in-cluster controllers
 
 ## Public endpoints
 
 - `demo.gitops-promoter.dev`: Argo CD UI and API (embedded Dex with [GitHub OAuth](https://argo-cd.readthedocs.io/en/stable/operator-manual/user-management/#configuring-github-oauth2); **`/api/dex/callback`** for SSO; **`/api/webhook`** for [Git webhooks](https://argo-cd.readthedocs.io/en/stable/operator-manual/webhook/) when configured)
-- `promoter-webhook.gitops-promoter.dev`: GitOps Promoter webhook receiver (separate from Argo CD’s Git webhook; **no HMAC secret verification** in Promoter today — see README, GitOps Promoter GitHub App)
+- `promoter-webhook.gitops-promoter.dev`: GitOps Promoter webhook receiver (separate from Argo CD’s Git webhook; **no HMAC secret verification** in Promoter today — see [SETUP.md](../SETUP.md) §12.1)
 - `grafana.gitops-promoter.dev`: public read-only dashboard
 
 ## Open implementation decisions

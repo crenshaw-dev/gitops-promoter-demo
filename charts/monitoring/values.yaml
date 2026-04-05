@@ -46,7 +46,7 @@ kube-prometheus-stack:
           hosts:
             - grafana.gitops-promoter.dev
 
-    # GitHub OAuth: separate GitHub OAuth App from Argo Dex (one callback URL per OAuth app; README §10.1).
+    # GitHub OAuth: separate OAuth app from Argo Dex (one callback URL per app); see SETUP.md §10.1 / DEBUGGING.md.
     # Secret/grafana-github-oauth is required;
     # Grafana pods stay Pending until the SealedSecret is synced and unsealed.
     envValueFrom:
