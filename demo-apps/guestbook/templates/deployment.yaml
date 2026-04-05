@@ -17,6 +17,8 @@ spec:
       labels:
         app.kubernetes.io/name: {{ include "guestbook.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        guestbook.demo/gitops-promoter-churn: {{ .Values.demoChurn.lastBumped | quote }}
     spec:
       containers:
         - name: guestbook

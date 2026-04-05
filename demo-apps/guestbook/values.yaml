@@ -1,5 +1,9 @@
 replicaCount: 1
 
+# Bumped by manifests/demo-churn CronJob; surfaces in pod annotations for every guestbook environment.
+demoChurn:
+  lastBumped: "1970-01-01T00:00:00Z"
+
 image:
   repository: gcr.io/google-samples/gb-frontend
   tag: v5
