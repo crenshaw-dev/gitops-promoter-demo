@@ -1,0 +1,12 @@
+.idea
+.idea/
+**/.idea/
+
+# Terraform local artifacts
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/.terraform.tfstate.lock.info
+**/crash.log
+**/*.tfvars
+**/*tfplan*

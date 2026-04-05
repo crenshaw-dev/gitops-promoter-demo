@@ -1,0 +1,13 @@
+apiVersion: promoter.argoproj.io/v1alpha1
+kind: GitCommitStatus
+metadata:
+  name: git-commit-check
+  namespace: gitops-promoter
+spec:
+  promotionStrategyRef:
+    name: demo
+  key: git-commit-check
+  description: "Commit subject must start with 'chore:'"
+  target: proposed
+  expression: 'Commit.Subject.startsWith("chore:")'
+

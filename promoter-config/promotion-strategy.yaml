@@ -1,0 +1,23 @@
+apiVersion: promoter.argoproj.io/v1alpha1
+kind: PromotionStrategy
+metadata:
+  name: demo
+  namespace: gitops-promoter
+spec:
+  gitRepositoryRef:
+    name: demo-config
+  environments:
+    - branch: env/dev/live
+      autoMerge: true
+    - branch: env/staging/live
+      autoMerge: true
+      activeCommitStatuses:
+        - key: argocd-dev-healthy
+        - key: timed-5m
+    - branch: env/production/live
+      autoMerge: true
+      activeCommitStatuses:
+        - key: argocd-staging-healthy
+        - key: timed-5m
+        - key: git-commit-check
+

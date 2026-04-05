@@ -1,0 +1,24 @@
+apiVersion: promoter.argoproj.io/v1alpha1
+kind: ArgoCDCommitStatus
+metadata:
+  name: argocd-dev-healthy
+  namespace: gitops-promoter
+spec:
+  promotionStrategyRef:
+    name: demo
+  applicationSelector:
+    matchLabels:
+      app-name: demo
+---
+apiVersion: promoter.argoproj.io/v1alpha1
+kind: ArgoCDCommitStatus
+metadata:
+  name: argocd-staging-healthy
+  namespace: gitops-promoter
+spec:
+  promotionStrategyRef:
+    name: demo
+  applicationSelector:
+    matchLabels:
+      app-name: demo
+
