@@ -38,7 +38,7 @@ Later commits can add:
 
 - `apps/`: Argo CD `Application` objects
 - `demo-apps/guestbook/`: minimal in-tree Helm chart (Deployment + Service, **`gcr.io/google-samples/gb-frontend:v5`**). Guestbook **`Application`**s use [**source hydration**](https://argo-cd.readthedocs.io/en/stable/user-guide/source-hydrator/): Argo reads **`demo-apps/guestbook`** on **`HEAD`**, writes rendered YAML under **`hydrated/guestbook-{dev,e2e,prd}`** on each env’s **`env/<env>-next`** branch, and syncs from **`env/<env>`** after GitOps Promoter merges **`env/<env>-next` → `env/<env>`**. Per-env replica counts use **`demo-apps/guestbook/env/{dev,e2e,prd}/values.yaml`**
-- `charts/`: umbrella charts and Helm values (each chart may include `Chart.lock` from `helm dependency build`). Argo CD–related **SealedSecret** manifests live in **`charts/argocd/templates/`** (Dex OAuth, Git webhook HMAC, hydrator **repository-write**); GitOps Promoter’s GitHub App PEM is **`charts/gitops-promoter/templates/github-app-credentials.sealed.yaml`**, applied with the **`gitops-promoter`** Application.
+- `charts/`: umbrella charts and Helm values (each chart may include `Chart.lock` from `helm dependency build`). Argo CD–related **SealedSecret** manifests live in **`charts/argocd/templates/`** (Dex OAuth, Git webhook HMAC, hydrator **repository-write**); GitOps Promoter’s GitHub App PEM is **`charts/gitops-promoter/templates/github-app-credentials.sealed.yaml`**, applied with the **`gitops-promoter`** Application. **`charts/monitoring/`** wraps **[kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)** (Prometheus Operator, Prometheus, Alertmanager, Grafana) into namespace **`monitoring`** (**`Application/monitoring`**, sync wave **1**).
 - `manifests/`: raw Kubernetes manifests applied by Argo CD (top-level YAML is synced by **`demo-config`** into `gitops-promoter`; **`manifests/demo-churn/`** syncs into **`argocd`** via **`Application/demo-churn`** — CronJob that bumps **`demo-apps/guestbook/values.yaml`** `demoChurn.lastBumped` via the same GitHub App write **`Secret`** as the hydrator)
 - `promoter-config/`: GitOps Promoter CRs applied with **`Application/promoter-config`** into **`gitops-promoter`**. One **`ArgoCDCommitStatus`** (**`commit-statuses/argocd-commit-status.yaml`**) selects all guestbook **`Application`**s via **`app.kubernetes.io/name: guestbook`**; the controller maps each app to an environment from **`spec.sourceHydrator.syncSource.targetBranch`** (hydrated guestbook apps) and emits **`argocd-health`** commit statuses ([docs](https://gitops-promoter.readthedocs.io/en/latest/commit-status-controllers/argocd/)). **`PromotionStrategy`** uses strategy-level **`activeCommitStatuses`** (**`argocd-health`**, **`timer`**) so ordering across envs also uses **`promoter-previous-environment`** ([gating](https://gitops-promoter.readthedocs.io/en/latest/gating-promotions/)).
 - `infra/gcp/terraform/`: Terraform for GCP networking and GKE
@@ -95,9 +95,11 @@ At minimum, update:
 - `apps/demo-config.yaml`
 - `apps/guestbook-dev.yaml`, `apps/guestbook-e2e.yaml`, `apps/guestbook-prd.yaml`
 - `apps/demo-churn.yaml`
+- `apps/monitoring.yaml`
 - `apps/gitops-promoter.yaml`
 - `charts/argocd/values.yaml`
 - `charts/gitops-promoter/values.yaml`
+- `charts/monitoring/values.yaml`
 - `promoter-config/git-repository.yaml`
 - `promoter-config/scm-provider.yaml`
 
@@ -418,7 +420,7 @@ In GitHub: **Settings** → **Developer settings** → **OAuth Apps** → **New 
 
 - **Application name:** any label you like (for example `Argo CD demo`)
 - **Homepage URL:** your public Argo CD URL (this demo: **`https://demo.<your-domain>`**)
-- **Authorization callback URL:** **`https://demo.<your-domain>/api/dex/callback`** (must match the **`url`** in **`argo-cd.configs.cm`** plus **`/api/dex/callback`**)
+- **Authorization callback URL:** **`https://demo.<your-domain>/api/dex/callback`** (must match the **`url`** in **`argo-cd.configs.cm`** plus **`/api/dex/callback`**). You can add a **second** callback for Grafana on the same app: **`https://grafana.<your-domain>/login/github`** (see **§10.1**).
 
 Under the app, create a **client secret**.
 
@@ -494,6 +496,34 @@ This repository assumes DNS for your domain is **not** in Google Cloud DNS (no m
 
 Point each hostname at the ingress IP from the script. TTL around 300 seconds is reasonable while validating TLS.
 
+### 10.1 Monitoring (Prometheus & Grafana)
+
+**`Application/monitoring`** (sync wave **1**, after **cert-manager** and **ingress-nginx**) installs **`charts/monitoring/`**, an umbrella over **`kube-prometheus-stack`** **82.18.0** into namespace **`monitoring`**: Prometheus Operator, Prometheus, Alertmanager, and Grafana with an Ingress on **`charts/monitoring/values.yaml`** → **`grafana.gitops-promoter.dev`** (TLS via **cert-manager**).
+
+**GitOps Promoter metrics:** **`charts/gitops-promoter/values.yaml`** enables **`prometheus.enable`** so the upstream chart creates a **`ServiceMonitor`** in **`gitops-promoter`**. Prometheus discovers it automatically (default **`ServiceMonitor`** selectors). A bundled Grafana dashboard (**GitOps Promoter**) is shipped as a **`ConfigMap`** labeled for the Grafana sidecar (**`charts/monitoring/templates/`** + **`charts/monitoring/dashboards/gitops-promoter.json`**), with panels for **`git_operations_*`**, **`scm_calls_*`**, webhook histograms, **`application_watch_events_handled_total`**, and **`controller_runtime_reconcile_total`**.
+
+**Grafana GitHub login (same idea as Argo CD Dex):** Grafana uses **native GitHub OAuth** ([docs](https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/configure-authentication/github/)). In the **same GitHub OAuth application** you use for Argo CD (**§9**), add an **Authorization callback URL** of **`https://<your-grafana-host>/login/github`** (this demo: **`https://grafana.gitops-promoter.dev/login/github`**). This repo includes **`charts/monitoring/templates/grafana-github-oauth.sealed.yaml`**, a **SealedSecret** for **`Secret/grafana-github-oauth`** in **`monitoring`** with the **same `clientId` / `clientSecret` values** as **`Secret/argocd-dex-github`** in **`argocd`** (re-sealed for the **`monitoring`** namespace so the controller can decrypt it). If you **fork** the repo or **rotate** OAuth credentials, regenerate from the live Dex secret:
+
+```bash
+CID=$(kubectl get secret argocd-dex-github -n argocd -o jsonpath='{.data.clientId}' | base64 -d)
+CS=$(kubectl get secret argocd-dex-github -n argocd -o jsonpath='{.data.clientSecret}' | base64 -d)
+kubectl create secret generic grafana-github-oauth -n monitoring \
+  --from-literal=clientId="$CID" --from-literal=clientSecret="$CS" \
+  --dry-run=client -o yaml \
+| kubeseal --controller-name sealed-secrets --controller-namespace kube-system -o yaml -n monitoring \
+  -w charts/monitoring/templates/grafana-github-oauth.sealed.yaml
+```
+
+Grafana’s deployment references **`Secret/grafana-github-oauth`** as **required** env vars, so the Grafana pod stays **Pending** until the **`SealedSecret`** is applied and unsealed (clear failure mode if the file is missing or the key does not match this cluster). After it is running, retrieve the random **admin** password with:
+
+```bash
+kubectl get secret -n monitoring mon-grafana -o jsonpath='{.data.admin-password}' | base64 -d && echo
+```
+
+**Customize** Grafana hostname and **`auth.github.allowed_organizations`** in **`charts/monitoring/values.yaml`** (keep **`ingress`**, **`tls`**, and **`grafana.ini.server.root_url`** consistent).
+
+After changing the umbrella chart, run **`helm dependency build`** in **`charts/monitoring/`** (or let CI/Renovate refresh **`Chart.lock`**).
+
 ## 11. Verify bootstrap components
 
 Check the Argo CD applications:
@@ -514,13 +544,14 @@ You should see these namespaces/components coming up:
 - `cert-manager`
 - `ingress-nginx`
 - `kube-system` / Sealed Secrets
+- `monitoring` (Prometheus Operator, Prometheus, Grafana)
 - `gitops-promoter`
 
 **Ingress admission webhook:** the ingress-nginx chart is configured so **cert-manager injects the CA** into `ValidatingWebhookConfiguration/ingress-nginx-admission` (`controller.admissionWebhooks.certManager.enabled`). After sync, `kubectl get validatingwebhookconfiguration ingress-nginx-admission -o jsonpath='{.webhooks[0].clientConfig.caBundle}' | wc -c` should print a **non-zero** length; if it stays empty, new `Ingress` objects can fail API validation.
 
 ## 12. GitOps Promoter: GitHub App, sealed credentials, and Git repository
 
-The bootstrap install includes the controller (**`apps/gitops-promoter.yaml`**, wave **3**) and the **`promoter-config`** Application (wave **4**), which syncs **`promoter-config/`** recursively into **`gitops-promoter`**. Until you add a real GitHub App and secret, **`ScmProvider`** and friends will not be able to talk to GitHub.
+The bootstrap install includes **`Application/monitoring`** (wave **1**) so Prometheus Operator CRDs exist before the controller (**`apps/gitops-promoter.yaml`**, wave **3**) creates its **`ServiceMonitor`**. It also includes the **`promoter-config`** Application (wave **4**), which syncs **`promoter-config/`** recursively into **`gitops-promoter`**. Until you add a real GitHub App and secret, **`ScmProvider`** and friends will not be able to talk to GitHub.
 
 Official reference: [GitOps Promoter getting started](https://gitops-promoter.readthedocs.io/en/latest/getting-started/) (permissions, `Secret` shape, `ScmProvider` / `GitRepository`).
 
@@ -573,6 +604,7 @@ Push; after sync, **`kubectl -n gitops-promoter get sealedsecret,secret,scmprovi
 
 ### 12.5 Argo CD UI and other secrets
 
+- Grafana dashboards and Prometheus: **`charts/monitoring/`** and **§10.1**.
 - Argo CD integrations (extension, links, commit-status keys): **`charts/argocd/values.yaml`** and [GitOps Promoter Argo CD integrations](https://gitops-promoter.readthedocs.io/en/latest/argocd-integrations/). If a **`PromotionStrategy`** is not top-level in an Application’s resource tree, set **`promoter.argoproj.io/has-promotionstrategy: "true"`** on that Application so the extension tab appears.
 - Argo CD Git webhook HMAC: **§8** → **`charts/argocd/templates/argocd-github-webhook.sealed.yaml`**.
 - Argo CD Dex GitHub OAuth: **§9** → **`charts/argocd/templates/argocd-dex-github.sealed.yaml`**.
@@ -600,7 +632,8 @@ A clean sequence is:
    - other sealed secrets as needed under **`charts/argocd/templates/`** (webhook, Dex, hydrator write)
 3. **Demo workloads commit**
    - `demo-apps/guestbook/` and **`apps/guestbook-dev.yaml`**, **`apps/guestbook-e2e.yaml`**, **`apps/guestbook-prd.yaml`**
-4. **Monitoring commit** (optional)
+4. **Monitoring commit**
+   - `apps/monitoring.yaml` and **`charts/monitoring/`** (run **`helm dependency build`**; **`grafana-github-oauth.sealed.yaml`** is tied to this cluster’s Sealed Secrets key)
 
 This keeps the cluster bring-up simple and avoids introducing broken credentials too early.
 
@@ -612,6 +645,7 @@ Bootstrap charts are currently pinned to:
 - cert-manager `1.20.1`
 - GitOps Promoter `0.5.1` (Helm chart; Argo CD UI extension bundle **`v0.25.1`** per [GitOps Promoter Argo CD integrations](https://gitops-promoter.readthedocs.io/en/latest/argocd-integrations/))
 - ingress-nginx `4.15.1`
+- kube-prometheus-stack `82.18.0` (**`charts/monitoring/`** umbrella)
 - sealed-secrets `2.18.4`
 
 Update the dependency versions in the umbrella chart `Chart.yaml` files when you upgrade.

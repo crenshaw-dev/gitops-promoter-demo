@@ -6,7 +6,7 @@
   "packageRules": [
     {
       "matchManagers": ["helmv3"],
-      "matchPackageNames": ["gitops-promoter", "argo-cd"],
+      "matchPackageNames": ["gitops-promoter", "argo-cd", "kube-prometheus-stack"],
       "automerge": true
     },
     {

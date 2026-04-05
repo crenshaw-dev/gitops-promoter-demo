@@ -1,4 +1,8 @@
 gitops-promoter:
+  # Prometheus Operator ServiceMonitor (requires monitoring Application synced first).
+  prometheus:
+    enable: true
+
   webhookReceiver:
     ingress:
       enabled: true
