@@ -14,7 +14,7 @@ This document captures the cloud assumptions for the demo instance on Google Clo
 
 ## Public endpoints
 
-- `demo.gitops-promoter.dev`: Argo CD UI and API (including **`/api/webhook`** for [Git webhooks](https://argo-cd.readthedocs.io/en/stable/operator-manual/webhook/) when configured)
+- `demo.gitops-promoter.dev`: Argo CD UI and API (embedded Dex with [GitHub OAuth](https://argo-cd.readthedocs.io/en/stable/operator-manual/user-management/#configuring-github-oauth2); **`/api/dex/callback`** for SSO; **`/api/webhook`** for [Git webhooks](https://argo-cd.readthedocs.io/en/stable/operator-manual/webhook/) when configured)
 - `promoter-webhook.gitops-promoter.dev`: GitOps Promoter webhook receiver (separate from Argo CD’s Git webhook)
 - `grafana.gitops-promoter.dev`: public read-only dashboard
 

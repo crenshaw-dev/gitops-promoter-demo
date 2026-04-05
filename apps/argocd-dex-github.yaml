@@ -1,16 +1,17 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: argocd
+  name: argocd-dex-github
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    # Before the argocd Application (wave 2) so Dex OAuth secrets exist when argocd-cm is applied.
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   project: default
   source:
     repoURL: https://github.com/crenshaw-dev/gitops-promoter-demo
     targetRevision: HEAD
-    path: charts/argocd
+    path: manifests/argocd-dex-github
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
@@ -18,6 +19,3 @@ spec:
     automated:
       prune: true
       selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-

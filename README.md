@@ -19,7 +19,7 @@ This README explains how to set the environment up from scratch in your own GCP 
 
 The initial bootstrap commit is focused on cluster foundations:
 
-- Argo CD
+- Argo CD (embedded Dex + GitHub connector in Helm values; OAuth credentials via Sealed Secret)
 - cert-manager
 - ingress-nginx
 - Sealed Secrets
@@ -33,13 +33,14 @@ Later commits can add:
 - GitOps Promoter `ScmProvider`, `GitRepository`, and `PromotionStrategy` resources
 - demo workload repository wiring
 - **`manifests/argocd-github-webhook/argocd-github-webhook.sealed.yaml`** for the Argo CD Git webhook HMAC when using push-to-sync (see **§8**)
+- **`manifests/argocd-dex-github/argocd-dex-github.sealed.yaml`** for GitHub OAuth credentials used by embedded Dex (see **§9**)
 - monitoring and dashboards
 
 ## Repository layout
 
 - `apps/`: Argo CD `Application` objects
 - `charts/`: umbrella charts and Helm values (each chart may include `Chart.lock` from `helm dependency build`)
-- `manifests/`: raw Kubernetes manifests applied by Argo CD (top-level YAML is synced by **`demo-config`** into `gitops-promoter`; **`manifests/argocd-github-webhook/`** is synced by **`argocd-github-webhook`** into `argocd`)
+- `manifests/`: raw Kubernetes manifests applied by Argo CD (top-level YAML is synced by **`demo-config`** into `gitops-promoter`; **`manifests/argocd-github-webhook/`** and **`manifests/argocd-dex-github/`** are synced into **`argocd`** by their Applications)
 - `promoter-config/`: GitOps Promoter CRs
 - `infra/gcp/terraform/`: Terraform for GCP networking and GKE
 - `infra/gcp/check-prereqs.sh`: local environment check script
@@ -65,6 +66,7 @@ Install these tools before starting:
 - `kubectl`
 - `terraform`
 - `helm`
+- `kubeseal` (same major line as the in-cluster Sealed Secrets controller) when you create sealed manifests locally
 
 You also need:
 
@@ -93,6 +95,7 @@ At minimum, update:
 - `apps/sealed-secrets.yaml`
 - `apps/demo-config.yaml`
 - `apps/argocd-github-webhook.yaml`
+- `apps/argocd-dex-github.yaml`
 - `apps/gitops-promoter.yaml`
 - `charts/argocd/values.yaml`
 - `charts/gitops-promoter/values.yaml`
@@ -102,7 +105,7 @@ At minimum, update:
 Things you will almost certainly change:
 
 - GitHub owner/repository URLs
-- Argo CD RBAC group mapping
+- Argo CD RBAC group mapping and Dex **`orgs`** / **`teams`** in **`charts/argocd/values.yaml`** (must match `org:team` in **`policy.csv`**)
 - public hostnames
 - GitOps Promoter GitHub owner/repo references
 - secret names once you introduce real credentials
@@ -366,6 +369,49 @@ Login with:
 - username: `admin`
 - password: value from `argocd-initial-admin-secret`
 
+### GitHub login (Dex)
+
+Argo CD ships with [Dex](https://dexidp.io/). This repository wires a [GitHub OAuth2 connector](https://argo-cd.readthedocs.io/en/stable/operator-manual/user-management/#configuring-github-oauth2) in **`charts/argocd/values.yaml`** under **`argo-cd.configs.cm.dex.config`**. OAuth **client ID** and **client secret** are **not** in Git: they live in **`Secret/argocd-dex-github`** (keys **`clientId`** and **`clientSecret`**) with label **`app.kubernetes.io/part-of: argocd`**, delivered like other secrets via Sealed Secrets.
+
+**1. Register a GitHub OAuth App**
+
+In GitHub: **Settings** → **Developer settings** → **OAuth Apps** → **New OAuth application**.
+
+- **Application name:** any label you like (for example `Argo CD demo`)
+- **Homepage URL:** your public Argo CD URL (this demo: **`https://demo.<your-domain>`**)
+- **Authorization callback URL:** **`https://demo.<your-domain>/api/dex/callback`** (must match the **`url`** in **`argo-cd.configs.cm`** plus **`/api/dex/callback`**)
+
+Under the app, create a **client secret**. Grant the app access to the org you list under **`orgs`** in **`dex.config`** if GitHub prompts you.
+
+**2. Seal credentials into the repo (exact path)**
+
+From the **repository root** (same **`kubeseal`** controller flags as the Git webhook secret in **§8**):
+
+```bash
+kubectl create secret generic argocd-dex-github -n argocd \
+  --from-literal=clientId='YOUR_GITHUB_OAUTH_CLIENT_ID' \
+  --from-literal=clientSecret='YOUR_GITHUB_OAUTH_CLIENT_SECRET' \
+  --dry-run=client -o yaml \
+  | kubectl label --local --dry-run=client -f - app.kubernetes.io/part-of=argocd -o yaml \
+  | kubeseal \
+      --controller-name sealed-secrets \
+      --controller-namespace kube-system \
+      -o yaml -n argocd \
+      -w manifests/argocd-dex-github/argocd-dex-github.sealed.yaml
+```
+
+Commit **`manifests/argocd-dex-github/argocd-dex-github.sealed.yaml`** and push. The **`Application/argocd-dex-github`** in **`apps/argocd-dex-github.yaml`** syncs it into **`argocd`** on **sync wave 1**, before the **`argocd`** Application on **wave 2**, so Dex can read the **`Secret`** when **`argocd-cm`** is applied.
+
+Until that **`Secret`** exists, Dex may log errors about missing client credentials; **`admin`** login (above) still works. After a successful sync, use **Log in via GitHub** on the Argo CD sign-in page.
+
+**3. Align org, team, and RBAC**
+
+Dex emits groups as **`org:team`**. The demo **`dex.config`** restricts login to org **`crenshaw-dev`** and team **`gitops-promoter-maintainers`**, matching **`g, crenshaw-dev:gitops-promoter-maintainers, role:admin`** in **`argo-cd.configs.rbac.policy.csv`**. If you fork the repo, change **both** the **`orgs`** block and the **`g, …`** line so they stay in sync.
+
+**4. Optional: disable the local `admin` user**
+
+After GitHub login works, you can turn off the built-in admin account per the [Argo CD FAQ](https://argo-cd.readthedocs.io/en/stable/faq/#how-to-disable-admin-user) (`admin.enabled` in **`argo-cd.configs.cm`**).
+
 ## 10. Create DNS records
 
 After `ingress-nginx` is running, read the load balancer **IPv4** address (what your A records must target):
@@ -427,6 +473,7 @@ Before promotions can work end-to-end, you still need to:
 4. Seal GitHub App credentials into Kubernetes.
 5. Commit the `promoter-config/` resources and any sealed secrets.
 6. If you use push-to-sync, seal and commit **`manifests/argocd-github-webhook/argocd-github-webhook.sealed.yaml`** (**§8**).
+7. Seal and commit **`manifests/argocd-dex-github/argocd-dex-github.sealed.yaml`** for GitHub login via Dex (**§9**).
 
 Relevant files:
 
@@ -443,13 +490,13 @@ Argo CD integrations from the [GitOps Promoter docs](https://gitops-promoter.rea
 A clean sequence is:
 
 1. **Bootstrap commit**
-   - `apps/` (includes **`apps/argocd-github-webhook.yaml`**; the webhook sealed file can land in a follow-up commit)
+   - `apps/` (includes **`apps/argocd-github-webhook.yaml`** and **`apps/argocd-dex-github.yaml`**; sealed credential files can land in follow-up commits)
    - `charts/`
    - `manifests/`
 2. **Promoter config + secrets commit**
    - `apps/promoter-config.yaml`
    - `promoter-config/`
-   - sealed secret manifests (for example **`manifests/argocd-github-webhook/argocd-github-webhook.sealed.yaml`** when you enable the Argo CD Git webhook)
+   - sealed secret manifests (for example **`manifests/argocd-github-webhook/…`** and **`manifests/argocd-dex-github/…`**)
 3. **Monitoring and demo workloads commit**
 
 This keeps the cluster bring-up simple and avoids introducing broken credentials too early.

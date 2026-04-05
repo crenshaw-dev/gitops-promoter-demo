@@ -48,10 +48,25 @@ argo-cd:
       server.insecure: "true"
     rbac:
       policy.default: role:readonly
+      # Group must match Dex GitHub connector org:team (see dex.config orgs.teams below).
       policy.csv: |
         g, crenshaw-dev:gitops-promoter-maintainers, role:admin
     cm:
       url: https://demo.gitops-promoter.dev
+      # Embedded Dex → GitHub (OAuth App). Client ID/secret: Secret/argocd-dex-github (SealedSecret).
+      # https://argo-cd.readthedocs.io/en/stable/operator-manual/user-management/#configuring-github-oauth2
+      dex.config: |
+        connectors:
+          - type: github
+            id: github
+            name: GitHub
+            config:
+              clientID: $argocd-dex-github:clientId
+              clientSecret: $argocd-dex-github:clientSecret
+              orgs:
+                - name: crenshaw-dev
+                  teams:
+                    - gitops-promoter-maintainers
       resource.customLabels: promoter.argoproj.io/commit-status
       resource.links: |
         - url: '{{.resource.status.url}}'
