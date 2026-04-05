@@ -1,8 +1,7 @@
 {
   "repoURL": "https://github.com/crenshaw-dev/gitops-promoter-demo",
-  "drySha": "7971aeaac35dce4eac953429bdf10c567c838b30",
-  "author": "Michael Crenshaw <350466+crenshaw-dev@users.noreply.github.com>",
-  "date": "2026-04-05T19:10:29Z",
-  "subject": "fix value",
-  "body": "Signed-off-by: Michael Crenshaw <350466+crenshaw-dev@users.noreply.github.com>\n"
+  "drySha": "86fed70a5a4d431e689b4ea7f74c10491161a165",
+  "author": "gitops-promoter-demo-repo[bot] <273831330+gitops-promoter-demo-repo[bot]@users.noreply.github.com>",
+  "date": "2026-04-05T19:15:10Z",
+  "subject": "chore: promoter demo churn 2026-04-05T19:15:09Z"
 }
