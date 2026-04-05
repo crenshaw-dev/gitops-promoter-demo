@@ -11,8 +11,6 @@ spec:
   activeCommitStatuses:
     - key: argocd-health
     - key: timer
-  proposedCommitStatuses:
-    - key: git-commit-check
   environments:
     - branch: env/dev
       autoMerge: true
