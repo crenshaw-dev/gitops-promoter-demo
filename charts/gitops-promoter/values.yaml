@@ -1,7 +1,7 @@
 gitops-promoter:
-  # Prometheus Operator ServiceMonitor (requires monitoring Application synced first).
+  # Upstream ServiceMonitor selector does not match the metrics Service labels (chart 0.5.1); use umbrella SM below.
   prometheus:
-    enable: true
+    enable: false
 
   webhookReceiver:
     ingress:
@@ -9,3 +9,6 @@ gitops-promoter:
       ingressClassName: nginx
       hostname: promoter-webhook.gitops-promoter.dev
 
+# Replaces upstream ServiceMonitor with a selector aligned to Service/gitops-promoter-controller-manager-metrics-service.
+controllerMetricsServiceMonitor:
+  enabled: true
