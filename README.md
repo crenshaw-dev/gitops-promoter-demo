@@ -41,7 +41,7 @@ Later commits can add:
 - `apps/`: Argo CD `Application` objects
 - `demo-apps/guestbook/`: minimal in-tree Helm chart (Deployment + Service, **`gcr.io/google-samples/gb-frontend:v5`**). Guestbook **`Application`**s use [**source hydration**](https://argo-cd.readthedocs.io/en/stable/user-guide/source-hydrator/): Argo reads **`demo-apps/guestbook`** on **`HEAD`**, writes rendered YAML under **`hydrated/guestbook-{dev,e2e,prd}`** on each env’s **`env/<env>-next`** branch, and syncs from **`env/<env>`** after GitOps Promoter merges **`env/<env>-next` → `env/<env>`**. Per-env replica counts use **`demo-apps/guestbook/env/{dev,e2e,prd}/values.yaml`**
 - `charts/`: umbrella charts and Helm values (each chart may include `Chart.lock` from `helm dependency build`)
-- `manifests/`: raw Kubernetes manifests applied by Argo CD (top-level YAML is synced by **`demo-config`** into `gitops-promoter`; **`manifests/argocd-github-webhook/`**, **`manifests/argocd-dex-github/`**, and **`manifests/argocd-repo-hydrator/`** (Sealed **repository-write** Secret for hydrator push when this repo is public) are synced into **`argocd`** by their Applications)
+- `manifests/`: raw Kubernetes manifests applied by Argo CD (top-level YAML is synced by **`demo-config`** into `gitops-promoter`; **`manifests/argocd-github-webhook/`**, **`manifests/argocd-dex-github/`**, **`manifests/argocd-repo-hydrator/`**, and **`manifests/demo-churn/`** (CronJob that pushes **`demo-apps/churn-trigger.txt`** via the same GitHub App write **`Secret`** as the hydrator) are synced into **`argocd`** by their Applications)
 - `promoter-config/`: GitOps Promoter CRs and (under **`promoter-config/secrets/`**) sealed **`Secret`** manifests applied with the same **`promoter-config`** Application into **`gitops-promoter`**. One **`ArgoCDCommitStatus`** (**`commit-statuses/argocd-commit-status.yaml`**) selects all guestbook **`Application`**s via **`app.kubernetes.io/name: guestbook`**; the controller maps each app to an environment from **`spec.sourceHydrator.syncSource.targetBranch`** (hydrated guestbook apps) and emits **`argocd-health`** commit statuses ([docs](https://gitops-promoter.readthedocs.io/en/latest/commit-status-controllers/argocd/)). **`PromotionStrategy`** uses strategy-level **`activeCommitStatuses`** (**`argocd-health`**, **`timer`**) so ordering across envs also uses **`promoter-previous-environment`** ([gating](https://gitops-promoter.readthedocs.io/en/latest/gating-promotions/)).
 - `infra/gcp/terraform/`: Terraform for GCP networking and GKE
 - `infra/gcp/check-prereqs.sh`: local environment check script
@@ -97,6 +97,7 @@ At minimum, update:
 - `apps/demo-config.yaml`
 - `apps/guestbook-dev.yaml`, `apps/guestbook-e2e.yaml`, `apps/guestbook-prd.yaml`
 - `apps/argocd-repo-hydrator.yaml`
+- `apps/demo-churn.yaml`
 - `apps/argocd-github-webhook.yaml`
 - `apps/argocd-dex-github.yaml`
 - `apps/gitops-promoter.yaml`
@@ -375,6 +376,12 @@ kubectl create secret generic argocd-repo-gitops-promoter-write -n argocd \
 
 Commit that sealed file. The **`Application/argocd-repo-hydrator`** (**`apps/argocd-repo-hydrator.yaml`**, sync wave **2**) applies it before the guestbook apps (wave **5**). Until it exists, hydration cannot push and the guestbook applications will not reach a healthy sync.
 
+### Promoter demo churn (CronJob)
+
+**`apps/demo-churn.yaml`** syncs **`manifests/demo-churn/`** into **`argocd`** (wave **6**): a **`CronJob`** runs every **15 minutes**, installs **`PyJWT`** + **`requests`** in the job container, and uses the **same** **`Secret/argocd-repo-gitops-promoter-write`** (keys **`githubAppID`**, **`url`**, **`githubAppPrivateKey`**, optional **`githubAppInstallationID`**) to call the [GitHub Contents API](https://docs.github.com/en/rest/repos/contents#create-or-update-file-contents). It updates **`demo-apps/churn-trigger.txt`** on the default branch with an ISO‑8601 timestamp. Commit subjects are **`chore: promoter demo churn …`**, which satisfies **`GitCommitStatus/git-commit-check`** in **`promotion-strategy.yaml`**.
+
+If **`githubAppInstallationID`** is omitted from the Secret, the script discovers an installation that can access the repo from **`url`** (first match). If your default branch is not **`main`**, patch **`manifests/demo-churn/cronjob.yaml`** env **`GITHUB_DEFAULT_BRANCH`**. The job stays **Pending**/**Error** until the hydrator write **`Secret`** exists.
+
 **Repository settings:** ensure GitHub does **not** auto-delete **`*-next`** branches when PRs merge (Promoter relies on them). Prefer disabling **Automatically delete head branches** or add branch protection for a pattern such as **`env/**`** ([Promoter note](https://gitops-promoter.readthedocs.io/en/latest/getting-started/#github-app-configuration)).
 
 **Not the GitOps Promoter webhook**
@@ -588,9 +595,9 @@ Push; after sync, **`kubectl -n gitops-promoter get sealedsecret,secret,scmprovi
 A clean sequence is:
 
 1. **Bootstrap commit**
-   - `apps/` (includes **`apps/argocd-repo-hydrator.yaml`**, **`apps/argocd-github-webhook.yaml`**, and **`apps/argocd-dex-github.yaml`**; sealed credential files can land in follow-up commits)
+   - `apps/` (includes **`apps/argocd-repo-hydrator.yaml`**, **`apps/demo-churn.yaml`**, **`apps/argocd-github-webhook.yaml`**, and **`apps/argocd-dex-github.yaml`**; sealed credential files can land in follow-up commits)
    - `charts/`
-   - `manifests/` (including **`manifests/argocd-repo-hydrator/`** once the hydrator **repository-write** secret is sealed)
+   - `manifests/` (including **`manifests/argocd-repo-hydrator/`** and **`manifests/demo-churn/`** once the hydrator **repository-write** secret is sealed)
 2. **Promoter config + secrets commit**
    - `apps/promoter-config.yaml`
    - `promoter-config/` (including **`promoter-config/secrets/github-app-credentials.sealed.yaml`** when the GitHub App exists)
