@@ -29,8 +29,8 @@ The initial bootstrap commit is focused on cluster foundations:
 
 Later commits can add:
 
-- GitHub App credentials
-- GitOps Promoter `ScmProvider`, `GitRepository`, and `PromotionStrategy` resources
+- **`promoter-config/secrets/github-app-credentials.sealed.yaml`** (GitHub App PEM) and edits to **`promoter-config/scm-provider.yaml`** / **`git-repository.yaml`** (**§12**)
+- GitOps Promoter `ScmProvider`, `GitRepository`, and `PromotionStrategy` resources (already in repo; need real IDs and secret)
 - demo workload repository wiring
 - **`manifests/argocd-github-webhook/argocd-github-webhook.sealed.yaml`** for the Argo CD Git webhook HMAC when using push-to-sync (see **§8**)
 - **`manifests/argocd-dex-github/argocd-dex-github.sealed.yaml`** for GitHub OAuth credentials used by embedded Dex (see **§9**)
@@ -41,7 +41,7 @@ Later commits can add:
 - `apps/`: Argo CD `Application` objects
 - `charts/`: umbrella charts and Helm values (each chart may include `Chart.lock` from `helm dependency build`)
 - `manifests/`: raw Kubernetes manifests applied by Argo CD (top-level YAML is synced by **`demo-config`** into `gitops-promoter`; **`manifests/argocd-github-webhook/`** and **`manifests/argocd-dex-github/`** are synced into **`argocd`** by their Applications)
-- `promoter-config/`: GitOps Promoter CRs
+- `promoter-config/`: GitOps Promoter CRs and (under **`promoter-config/secrets/`**) sealed **`Secret`** manifests applied with the same **`promoter-config`** Application into **`gitops-promoter`**
 - `infra/gcp/terraform/`: Terraform for GCP networking and GKE
 - `infra/gcp/check-prereqs.sh`: local environment check script
 - `infra/gcp/get-ingress-lb-ip.sh`: print ingress-nginx load balancer IP for DNS A records
@@ -479,29 +479,66 @@ You should see these namespaces/components coming up:
 
 **Ingress admission webhook:** the ingress-nginx chart is configured so **cert-manager injects the CA** into `ValidatingWebhookConfiguration/ingress-nginx-admission` (`controller.admissionWebhooks.certManager.enabled`). After sync, `kubectl get validatingwebhookconfiguration ingress-nginx-admission -o jsonpath='{.webhooks[0].clientConfig.caBundle}' | wc -c` should print a **non-zero** length; if it stays empty, new `Ingress` objects can fail API validation.
 
-## 12. Add GitOps Promoter credentials and config
+## 12. GitOps Promoter: GitHub App, sealed credentials, and config repo
 
-The bootstrap commit intentionally stops short of creating working GitHub App credentials.
+The bootstrap install includes the controller (**`apps/gitops-promoter.yaml`**, wave **3**) and the **`promoter-config`** Application (wave **4**), which syncs **`promoter-config/`** recursively into **`gitops-promoter`**. Until you add a real GitHub App and secret, **`ScmProvider`** and friends will not be able to talk to GitHub.
 
-Before promotions can work end-to-end, you still need to:
+Official reference: [GitOps Promoter getting started](https://gitops-promoter.readthedocs.io/en/latest/getting-started/) (permissions, `Secret` shape, `ScmProvider` / `GitRepository`).
 
-1. Create a GitHub App for GitOps Promoter.
-2. Create the demo config repository.
-3. Initialize the environment branches.
-4. Seal GitHub App credentials into Kubernetes.
-5. Commit the `promoter-config/` resources and any sealed secrets.
-6. If you use push-to-sync, seal and commit **`manifests/argocd-github-webhook/argocd-github-webhook.sealed.yaml`** (**§8**).
-7. Seal and commit **`manifests/argocd-dex-github/argocd-dex-github.sealed.yaml`** for GitHub login via Dex (**§9**).
+### 12.1 GitHub App
 
-Relevant files:
+1. [Create a GitHub App](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app) (org or user).
+2. Permissions (from upstream docs): **Checks** read/write, **Contents** read/write, **Pull requests** read/write.
+3. **Webhook (recommended):** set **Webhook URL** to **`https://promoter-webhook.<your-domain>/`** (same host as **`charts/gitops-promoter/values.yaml`** → **`webhookReceiver.ingress.hostname`**). Use the payload format GitHub defaults to unless the Promoter docs specify otherwise.
+4. **Webhook “secret” on GitHub:** GitHub lets you set a signing secret for repository webhooks, but the GitOps Promoter **webhook receiver does not verify** **`X-Hub-Signature-256`** (or similar) today — see [`internal/webhookreceiver/server.go`](https://github.com/argoproj-labs/gitops-promoter/blob/main/internal/webhookreceiver/server.go) in **v0.25.1** / **main**. Setting a secret in GitHub does not harden this endpoint until upstream adds verification. Mitigations: keep the URL non-obvious, restrict at ingress/network (allowlist GitHub IPs, internal-only URL, or a front proxy that validates signatures), and treat the receiver as **unauthenticated trigger** surface (it only enqueues reconcile when a matching **`ChangeTransferPolicy`** exists).
+5. Generate and download a **private key** (`.pem`).
+6. Note the app’s **App ID** (numeric). **Install** the app on the account or org that owns your repos and note **Installation ID** if you want to pin it (optional on `ScmProvider`; see **`promoter-config/scm-provider.yaml`**).
 
-- `apps/promoter-config.yaml`
-- `promoter-config/scm-provider.yaml`
-- `promoter-config/git-repository.yaml`
-- `promoter-config/promotion-strategy.yaml`
-- `promoter-config/commit-statuses/*`
+### 12.2 Config repository and branches
 
-Argo CD integrations from the [GitOps Promoter docs](https://gitops-promoter.readthedocs.io/en/latest/argocd-integrations/) (UI extension installer, `resource.links` for PR deep links, `resource.customLabels` for commit-status keys) live in **`charts/argocd/values.yaml`**. If a PromotionStrategy is **not** top-level in an Application’s resource tree, add **`promoter.argoproj.io/has-promotionstrategy: "true"`** on that Application so the extension tab appears.
+1. Create the **config** repo named in **`promoter-config/git-repository.yaml`** (this demo: **`git-repository.yaml`** → **`crenshaw-dev/gitops-promoter-demo-config`** — change owner/name if you fork).
+2. **`promotion-strategy.yaml`** expects merge targets such as **`env/dev/live`**, **`env/staging/live`**, **`env/production/live`**. Your hydrator / promotion flow must match the [branch conventions](https://gitops-promoter.readthedocs.io/en/latest/getting-started/#promotion-strategy) the project documents (including **`*-next`** hydration branches where applicable). Align branch names here with what you actually create in Git.
+
+### 12.3 Seal the GitHub App private key (same Application as promoter CRs)
+
+The **`ScmProvider`** references **`secretRef.name: github-app-credentials`**. The data key must be **`githubAppPrivateKey`** (PEM string), per the [getting started](https://gitops-promoter.readthedocs.io/en/latest/getting-started/#github-app-configuration) `Secret` example.
+
+From the **repository root**, with the PEM file on disk (adjust paths):
+
+```bash
+kubectl create secret generic github-app-credentials -n gitops-promoter \
+  --from-file=githubAppPrivateKey=/path/to/your-github-app.private-key.pem \
+  --dry-run=client -o yaml \
+  | kubeseal \
+      --controller-name sealed-secrets \
+      --controller-namespace kube-system \
+      -o yaml -n gitops-promoter \
+      -w promoter-config/secrets/github-app-credentials.sealed.yaml
+```
+
+Commit **`promoter-config/secrets/github-app-credentials.sealed.yaml`**. The **`promoter-config`** Application applies it to **`gitops-promoter`** alongside **`ScmProvider`**, **`GitRepository`**, and **`PromotionStrategy`** (no separate Argo `Application`).
+
+### 12.4 Wire non-secret IDs in Git
+
+Edit **`promoter-config/scm-provider.yaml`**: set **`spec.github.appID`** to your numeric App ID. Uncomment and set **`installationID`** only if you need to pin a single installation.
+
+Edit **`promoter-config/git-repository.yaml`** if **`owner`** / **`name`** differ from your config repo.
+
+Push; after sync, **`kubectl -n gitops-promoter get sealedsecret,secret,scmprovider`** should show the decoded **`Secret`** and a healthy **`ScmProvider`**.
+
+### 12.5 Argo CD UI and other secrets
+
+- Argo CD integrations (extension, links, commit-status keys): **`charts/argocd/values.yaml`** and [GitOps Promoter Argo CD integrations](https://gitops-promoter.readthedocs.io/en/latest/argocd-integrations/). If a **`PromotionStrategy`** is not top-level in an Application’s resource tree, set **`promoter.argoproj.io/has-promotionstrategy: "true"`** on that Application so the extension tab appears.
+- Argo CD Git webhook HMAC: **§8** → **`manifests/argocd-github-webhook/`**.
+- Argo CD Dex GitHub OAuth: **§9** → **`manifests/argocd-dex-github/`**.
+
+### 12.6 Checklist (other prerequisites)
+
+1. Create GitHub App and install it; configure webhook host to **`promoter-webhook.<your-domain>`** when ingress is ready.
+2. Create config repo and branches consistent with **`promotion-strategy.yaml`**.
+3. Seal and commit **`promoter-config/secrets/github-app-credentials.sealed.yaml`**.
+4. Set **`appID`** (and optionally **`installationID`**) in **`promoter-config/scm-provider.yaml`**; fix **`git-repository.yaml`** owner/name.
+5. Optional: **§8** / **§9** sealed files for Argo CD.
 
 ## 13. Suggested first commits
 
@@ -513,8 +550,8 @@ A clean sequence is:
    - `manifests/`
 2. **Promoter config + secrets commit**
    - `apps/promoter-config.yaml`
-   - `promoter-config/`
-   - sealed secret manifests (for example **`manifests/argocd-github-webhook/…`** and **`manifests/argocd-dex-github/…`**)
+   - `promoter-config/` (including **`promoter-config/secrets/github-app-credentials.sealed.yaml`** when the GitHub App exists)
+   - other sealed secrets as needed (**`manifests/argocd-github-webhook/…`**, **`manifests/argocd-dex-github/…`**)
 3. **Monitoring and demo workloads commit**
 
 This keeps the cluster bring-up simple and avoids introducing broken credentials too early.

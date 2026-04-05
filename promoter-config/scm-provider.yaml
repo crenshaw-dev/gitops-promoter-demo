@@ -5,7 +5,12 @@ metadata:
   namespace: gitops-promoter
 spec:
   github:
-    appID: 0
+    # Replace with your GitHub App’s numeric ID (Settings → Developer settings → GitHub Apps → your app).
+    appID: 3285420
+    # Optional: set if the controller should use a specific installation. If omitted, the controller
+    # can discover installations (see https://gitops-promoter.readthedocs.io/en/latest/getting-started/).
+    # installationID: 12345678
   secretRef:
+    # PEM lives in SealedSecret → Secret; see README §12 (promoter-config/secrets/).
     name: github-app-credentials
 
