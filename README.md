@@ -523,6 +523,8 @@ Grafana’s deployment references **`Secret/grafana-github-oauth`** as **require
 
 **Customize** Grafana hostname and **`auth.github.allowed_organizations`** in **`charts/monitoring/values.yaml`** (keep **`ingress`**, **`tls`**, and **`grafana.ini.server.root_url`** consistent).
 
+**If Argo CD never finishes “waiting for healthy” on `monitoring.coreos.com/Prometheus/…`:** The operator Deployment can become **Ready** before **`prometheuses.monitoring.coreos.com`** (and sibling) CRDs finish registering. On startup, **Prometheus Operator disables controllers** for API kinds it does not see and **does not turn them on later** without a restart. You get **`Prometheus`** / **`Alertmanager`** CRs with **empty `status`**, **no** `prometheus-…` **StatefulSet**, and startup logs like **`resource "prometheuses" (group: "monitoring.coreos.com/v1") not installed in the cluster`**. Recovery: **`kubectl -n monitoring rollout restart deploy/monitoring-kube-prometheus-operator`**, then check **`kubectl -n monitoring get sts,pods -l app.kubernetes.io/name=prometheus`**.
+
 After changing the umbrella chart, run **`helm dependency build`** in **`charts/monitoring/`** (or let CI/Renovate refresh **`Chart.lock`**).
 
 ## 11. Verify bootstrap components
