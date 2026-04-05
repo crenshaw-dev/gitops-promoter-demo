@@ -39,8 +39,8 @@ kube-prometheus-stack:
           hosts:
             - grafana.gitops-promoter.dev
 
-    # GitHub OAuth: add https://<grafana-host>/login/github as an authorization callback URL on the
-    # same GitHub OAuth app you use for Argo CD Dex (README §9). Secret/grafana-github-oauth is required;
+    # GitHub OAuth: separate GitHub OAuth App from Argo Dex (one callback URL per OAuth app; README §10.1).
+    # Secret/grafana-github-oauth is required;
     # Grafana pods stay Pending until the SealedSecret is synced and unsealed.
     envValueFrom:
       GF_AUTH_GITHUB_CLIENT_ID:

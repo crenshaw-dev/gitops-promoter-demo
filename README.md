@@ -420,7 +420,9 @@ In GitHub: **Settings** → **Developer settings** → **OAuth Apps** → **New 
 
 - **Application name:** any label you like (for example `Argo CD demo`)
 - **Homepage URL:** your public Argo CD URL (this demo: **`https://demo.<your-domain>`**)
-- **Authorization callback URL:** **`https://demo.<your-domain>/api/dex/callback`** (must match the **`url`** in **`argo-cd.configs.cm`** plus **`/api/dex/callback`**). You can add a **second** callback for Grafana on the same app: **`https://grafana.<your-domain>/login/github`** (see **§10.1**).
+- **Authorization callback URL:** **`https://demo.<your-domain>/api/dex/callback`** (must match the **`url`** in **`argo-cd.configs.cm`** plus **`/api/dex/callback`**).
+
+GitHub **[OAuth Apps](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app)** allow **only one** authorization callback URL (unlike **GitHub Apps**, which allow several). You **cannot** register both Dex’s callback and Grafana’s **`…/login/github`** on the same OAuth app. For Grafana, use a **second OAuth App** whose single callback is **`https://grafana.<your-domain>/login/github`** (**§10.1**), or front Grafana with **Dex** (OIDC / generic OAuth) so GitHub still talks only to Dex.
 
 Under the app, create a **client secret**.
 
@@ -502,17 +504,18 @@ Point each hostname at the ingress IP from the script. TTL around 300 seconds is
 
 **GitOps Promoter metrics:** **`charts/gitops-promoter/values.yaml`** enables **`prometheus.enable`** so the upstream chart creates a **`ServiceMonitor`** in **`gitops-promoter`**. Prometheus discovers it automatically (default **`ServiceMonitor`** selectors). A bundled Grafana dashboard (**GitOps Promoter**) is shipped as a **`ConfigMap`** labeled for the Grafana sidecar (**`charts/monitoring/templates/`** + **`charts/monitoring/dashboards/gitops-promoter.json`**), with panels for **`git_operations_*`**, **`scm_calls_*`**, webhook histograms, **`application_watch_events_handled_total`**, and **`controller_runtime_reconcile_total`**.
 
-**Grafana GitHub login (same idea as Argo CD Dex):** Grafana uses **native GitHub OAuth** ([docs](https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/configure-authentication/github/)). In the **same GitHub OAuth application** you use for Argo CD (**§9**), add an **Authorization callback URL** of **`https://<your-grafana-host>/login/github`** (this demo: **`https://grafana.gitops-promoter.dev/login/github`**). This repo includes **`charts/monitoring/templates/grafana-github-oauth.sealed.yaml`**, a **SealedSecret** for **`Secret/grafana-github-oauth`** in **`monitoring`** with the **same `clientId` / `clientSecret` values** as **`Secret/argocd-dex-github`** in **`argocd`** (re-sealed for the **`monitoring`** namespace so the controller can decrypt it). If you **fork** the repo or **rotate** OAuth credentials, regenerate from the live Dex secret:
+**Grafana GitHub login:** Grafana uses **native GitHub OAuth** ([docs](https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/configure-authentication/github/)). Because a GitHub **OAuth App** only allows **one** callback URL (**[docs](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app)**), Grafana needs its **own** OAuth App (separate from Argo’s Dex app in **§9**): register **Homepage URL** **`https://<your-grafana-host>`** and **Authorization callback URL** **`https://<your-grafana-host>/login/github`** (this demo: **`https://grafana.gitops-promoter.dev/login/github`**). Seal **that** app’s **`clientId`** / **`clientSecret`** into **`charts/monitoring/templates/grafana-github-oauth.sealed.yaml`** (namespace **`monitoring`**, **`Secret/grafana-github-oauth`**). Reusing the Dex app’s credentials **without** registering Grafana’s callback on GitHub will fail at authorize time (**`redirect_uri` mismatch**).
 
 ```bash
-CID=$(kubectl get secret argocd-dex-github -n argocd -o jsonpath='{.data.clientId}' | base64 -d)
-CS=$(kubectl get secret argocd-dex-github -n argocd -o jsonpath='{.data.clientSecret}' | base64 -d)
 kubectl create secret generic grafana-github-oauth -n monitoring \
-  --from-literal=clientId="$CID" --from-literal=clientSecret="$CS" \
+  --from-literal=clientId='YOUR_GRAFANA_OAUTH_APP_CLIENT_ID' \
+  --from-literal=clientSecret='YOUR_GRAFANA_OAUTH_APP_CLIENT_SECRET' \
   --dry-run=client -o yaml \
 | kubeseal --controller-name sealed-secrets --controller-namespace kube-system -o yaml -n monitoring \
   -w charts/monitoring/templates/grafana-github-oauth.sealed.yaml
 ```
+
+If this repository’s **`grafana-github-oauth.sealed.yaml`** was generated from **Dex**’s **`Secret`**, it is the **wrong** GitHub OAuth client for Grafana’s redirect URL—**overwrite** it with a seal from the **Grafana-only** OAuth app above.
 
 Grafana’s deployment references **`Secret/grafana-github-oauth`** as **required** env vars, so the Grafana pod stays **Pending** until the **`SealedSecret`** is applied and unsealed (clear failure mode if the file is missing or the key does not match this cluster). After it is running, retrieve the random **admin** password with:
 
