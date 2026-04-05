@@ -18,7 +18,7 @@ spec:
         app.kubernetes.io/name: {{ include "guestbook.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
       annotations:
-        guestbook.demo/gitops-promoter-churn: {{ .Values.demoChurn.lastBumped | quote }}
+        guestbook.demo/gitops-promoter-churn: {{- if and .Values.demoChurn (kindIs "map" .Values.demoChurn) }} {{ .Values.demoChurn.lastBumped | default "1970-01-01T00:00:00Z" | quote }}{{- else }} {{ "1970-01-01T00:00:00Z" | quote }}{{- end }}
     spec:
       containers:
         - name: guestbook
