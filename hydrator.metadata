@@ -1,0 +1,8 @@
+{
+  "repoURL": "https://github.com/crenshaw-dev/gitops-promoter-demo",
+  "drySha": "817a28868c18cb1c6988c7fc277e07e5944d1bd1",
+  "author": "Michael Crenshaw <350466+crenshaw-dev@users.noreply.github.com>",
+  "date": "2026-04-05T18:02:38Z",
+  "subject": "chore: fix bump",
+  "body": "Signed-off-by: Michael Crenshaw <350466+crenshaw-dev@users.noreply.github.com>\n"
+}
