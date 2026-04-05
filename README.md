@@ -381,7 +381,9 @@ In GitHub: **Settings** → **Developer settings** → **OAuth Apps** → **New 
 - **Homepage URL:** your public Argo CD URL (this demo: **`https://demo.<your-domain>`**)
 - **Authorization callback URL:** **`https://demo.<your-domain>/api/dex/callback`** (must match the **`url`** in **`argo-cd.configs.cm`** plus **`/api/dex/callback`**)
 
-Under the app, create a **client secret**. Grant the app access to the org you list under **`orgs`** in **`dex.config`** if GitHub prompts you.
+Under the app, create a **client secret**.
+
+**Org access (required for org-based login):** GitHub will not let Dex read org or team membership until the OAuth app is allowed for that org. As an org owner (or member who can approve), open **Organization** → **Settings** → **Third-party access** (or **Personal settings** → **Applications** → **Authorized OAuth Apps** and complete the org grant flow). Without this, Dex often fails with a generic **login failed** in the UI. See Dex’s [GitHub connector caveats](https://dexidp.io/docs/connectors/github/).
 
 **2. Seal credentials into the repo (exact path)**
 
@@ -404,11 +406,28 @@ Commit **`manifests/argocd-dex-github/argocd-dex-github.sealed.yaml`** and push.
 
 Until that **`Secret`** exists, Dex may log errors about missing client credentials; **`admin`** login (above) still works. After a successful sync, use **Log in via GitHub** on the Argo CD sign-in page.
 
-**3. Align org, team, and RBAC**
+**3. Align org, team claims, and RBAC**
 
-Dex emits groups as **`org:team`**. The demo **`dex.config`** restricts login to org **`crenshaw-dev`** and team **`gitops-promoter-maintainers`**, matching **`g, crenshaw-dev:gitops-promoter-maintainers, role:admin`** in **`argo-cd.configs.rbac.policy.csv`**. If you fork the repo, change **both** the **`orgs`** block and the **`g, …`** line so they stay in sync.
+- **`dex.config`** lists **orgs** only: any **member** of that org can finish GitHub OAuth. (If you add **`teams`** under an org, Dex **rejects** users who are not in those teams—often as an unhelpful **login failed**.)
+- **`teamNameField: slug`** makes group claims use the GitHub **team slug** (for example **`crenshaw-dev:gitops-promoter-maintainers`**), which must match the **`g, …`** lines in **`argo-cd.configs.rbac.policy.csv`**.
+- Users in the org but **not** in that team get **`policy.default`** (here, **readonly**), not **admin**.
 
-**4. Optional: disable the local `admin` user**
+If you fork the repo, update the **`orgs`** entry, the **`g, org:team-slug, role:admin`** line, and your GitHub OAuth app’s callback URL for your real hostname.
+
+**4. If you still see “login failed”**
+
+1. Confirm the OAuth app’s **Authorization callback URL** is exactly **`https://<same-host-as-argocd-cm-url>/api/dex/callback`** (no trailing slash; **`https`** if users hit the UI over TLS).
+2. Confirm **`Secret/argocd-dex-github`** exists in **`argocd`** and keys are **`clientId`** / **`clientSecret`** (camelCase), and the label **`app.kubernetes.io/part-of: argocd`** is present.
+3. Read Dex and API server logs after a failed attempt:
+
+```bash
+kubectl -n argocd logs deploy/argocd-dex-server --tail=80
+kubectl -n argocd logs deploy/argocd-server --tail=80
+```
+
+Look for GitHub OAuth errors, **organization** access, or unresolved **`$…`** placeholders in config (secret indirection broken).
+
+**5. Optional: disable the local `admin` user**
 
 After GitHub login works, you can turn off the built-in admin account per the [Argo CD FAQ](https://argo-cd.readthedocs.io/en/stable/faq/#how-to-disable-admin-user) (`admin.enabled` in **`argo-cd.configs.cm`**).
 

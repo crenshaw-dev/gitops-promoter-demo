@@ -48,7 +48,7 @@ argo-cd:
       server.insecure: "true"
     rbac:
       policy.default: role:readonly
-      # Group must match Dex GitHub connector org:team (see dex.config orgs.teams below).
+      # Group = org slug + GitHub team slug (teamNameField: slug in dex.config).
       policy.csv: |
         g, crenshaw-dev:gitops-promoter-maintainers, role:admin
     cm:
@@ -63,10 +63,12 @@ argo-cd:
             config:
               clientID: $argocd-dex-github:clientId
               clientSecret: $argocd-dex-github:clientSecret
+              # Use GitHub team slugs so RBAC `g, org:team-slug, role:admin` matches claims.
+              teamNameField: slug
+              # Org only: any org member can complete OAuth. Listing `teams` under an org
+              # requires membership in those teams and causes a generic "login failed" otherwise.
               orgs:
                 - name: crenshaw-dev
-                  teams:
-                    - gitops-promoter-maintainers
       resource.customLabels: promoter.argoproj.io/commit-status
       resource.links: |
         - url: '{{.resource.status.url}}'
