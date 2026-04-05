@@ -1,24 +1,20 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: demo-config
+  name: demo-churn
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: "6"
 spec:
   project: default
   source:
-    repoURL: https://github.com/crenshaw-dev/gitops-promoter-demo
+    repoURL: {{ .Values.repoURL | quote }}
     targetRevision: HEAD
-    path: manifests
+    path: manifests/demo-churn
   destination:
     server: https://kubernetes.default.svc
-    namespace: gitops-promoter
+    namespace: argocd
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - SkipDryRunOnMissingResource=true
-

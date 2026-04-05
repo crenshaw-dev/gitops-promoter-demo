@@ -9,7 +9,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/crenshaw-dev/gitops-promoter-demo
+    repoURL: {{ .Values.repoURL | quote }}
     targetRevision: HEAD
     path: charts/monitoring
   destination:

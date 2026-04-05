@@ -36,7 +36,7 @@ Later commits can add:
 
 Overview: [README.md — Repository layout](README.md#repository-layout-short). Details:
 
-- `apps/`: Argo CD `Application` objects
+- `apps/`: bootstrap **`Application/root-app`** only; child apps are Helm templates in **`charts/apps/`** (single **`repoURL`** in **`charts/apps/values.yaml`** — keep **`apps/root-app.yaml`** `spec.source.repoURL` the same)
 - `demo-apps/guestbook/`: minimal in-tree Helm chart (Deployment + Service, **`gcr.io/google-samples/gb-frontend:v5`**). Guestbook **`Application`**s use [**source hydration**](https://argo-cd.readthedocs.io/en/stable/user-guide/source-hydrator/): Argo reads **`demo-apps/guestbook`** on **`HEAD`**, writes rendered YAML under **`hydrated/guestbook-{dev,e2e,prd}`** on each env’s **`env/<env>-next`** branch, and syncs from **`env/<env>`** after GitOps Promoter merges **`env/<env>-next` → `env/<env>`**. Per-env replica counts use **`demo-apps/guestbook/env/{dev,e2e,prd}/values.yaml`**
 - `charts/`: umbrella charts and Helm values (each chart may include `Chart.lock` from `helm dependency build`). Argo CD–related **SealedSecret** manifests live in **`charts/argocd/templates/`** (Dex OAuth, Git webhook HMAC, hydrator **repository-write**); GitOps Promoter’s GitHub App PEM is **`charts/gitops-promoter/templates/github-app-credentials.sealed.yaml`**, applied with the **`gitops-promoter`** Application. **`charts/monitoring/`** wraps **[kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)** (Prometheus Operator, Prometheus, Alertmanager, Grafana) into namespace **`monitoring`** (**`Application/monitoring`**, sync wave **1**).
 - `manifests/`: raw Kubernetes manifests applied by Argo CD (top-level YAML is synced by **`demo-config`** into `gitops-promoter`; **`manifests/demo-churn/`** syncs into **`argocd`** via **`Application/demo-churn`** — CronJob that bumps **`demo-apps/guestbook/values.yaml`** `demoChurn.lastBumped` via the same GitHub App write **`Secret`** as the hydrator)
@@ -49,7 +49,7 @@ Overview: [README.md — Repository layout](README.md#repository-layout-short). 
 ## Conventions
 
 - Argo CD applications use **single-source** `spec.source`, not multi-source apps, **except** the guestbook env **`Application`**s, which use **`spec.sourceHydrator`** so GitOps Promoter can gate on hydrated branches ([source hydrator](https://argo-cd.readthedocs.io/en/stable/user-guide/source-hydrator/)).
-- Every `Application` under `apps/` uses **automated** sync with **`prune: true`** and **`selfHeal: true`** (including `root-app`).
+- **`Application/root-app`** and every child app rendered from **`charts/apps`** use **automated** sync with **`prune: true`** and **`selfHeal: true`**.
 - Helm deployments come from **in-repo umbrella charts**.
 - Environment-specific values should live in ignored local files such as `terraform.tfvars`, not in committed source.
 - **GitOps first:** change the cluster by committing to this repository and letting Argo CD sync. Avoid `kubectl apply`, `kubectl patch`, or ad-hoc edits to workloads except in a real break-glass situation (for example, Argo CD cannot reconcile and you need a one-time repair).
@@ -87,16 +87,7 @@ Before provisioning, replace the placeholders and personal org references in the
 
 At minimum, update:
 
-- `apps/root-app.yaml`
-- `apps/argocd.yaml`
-- `apps/cert-manager.yaml`
-- `apps/ingress-nginx.yaml`
-- `apps/sealed-secrets.yaml`
-- `apps/demo-config.yaml`
-- `apps/guestbook-dev.yaml`, `apps/guestbook-e2e.yaml`, `apps/guestbook-prd.yaml`
-- `apps/demo-churn.yaml`
-- `apps/monitoring.yaml`
-- `apps/gitops-promoter.yaml`
+- `apps/root-app.yaml` and **`charts/apps/values.yaml`** — set the same Git **`repoURL`** in both (root-app is where Argo CD clones from; the chart value drives every child **`Application`**)
 - `charts/argocd/values.yaml`
 - `charts/gitops-promoter/values.yaml`
 - `charts/monitoring/values.yaml`
@@ -278,7 +269,7 @@ Apply the App-of-Apps root application:
 kubectl apply -f apps/root-app.yaml
 ```
 
-That causes Argo CD to begin reconciling the applications under `apps/`.
+That causes Argo CD to sync the **`charts/apps`** Helm chart and reconcile all child **`Application`** objects from **`charts/apps/templates/`**.
 
 ### Git webhooks (sync soon after you push)
 
@@ -375,7 +366,7 @@ Commit that sealed file. It ships with the **`Application/argocd`** umbrella (sa
 
 ### Promoter demo churn (CronJob)
 
-**`apps/demo-churn.yaml`** syncs **`manifests/demo-churn/`** into **`argocd`** (wave **6**): a **`CronJob`** runs every **15 minutes**, installs **`PyJWT`** + **`requests`** in the job container, and uses the **same** **`Secret/argocd-repo-gitops-promoter-write`** (keys **`githubAppID`**, **`url`**, **`githubAppPrivateKey`**, optional **`githubAppInstallationID`**) to call the [GitHub Contents API](https://docs.github.com/en/rest/repos/contents#create-or-update-file-contents). It patches **`demoChurn.lastBumped`** in **`demo-apps/guestbook/values.yaml`** (shared Helm values), which changes rendered **`Deployment`** pod annotations for **dev**, **e2e**, and **prd** guestbook apps after hydration. Commits use subjects like **`chore: promoter demo churn …`** for a conventional style only; promotion is not gated on that text in this demo.
+**`Application/demo-churn`** (from **`charts/apps`**) syncs **`manifests/demo-churn/`** into **`argocd`** (wave **6**): a **`CronJob`** runs every **15 minutes**, installs **`PyJWT`** + **`requests`** in the job container, and uses the **same** **`Secret/argocd-repo-gitops-promoter-write`** (keys **`githubAppID`**, **`url`**, **`githubAppPrivateKey`**, optional **`githubAppInstallationID`**) to call the [GitHub Contents API](https://docs.github.com/en/rest/repos/contents#create-or-update-file-contents). It patches **`demoChurn.lastBumped`** in **`demo-apps/guestbook/values.yaml`** (shared Helm values), which changes rendered **`Deployment`** pod annotations for **dev**, **e2e**, and **prd** guestbook apps after hydration. Commits use subjects like **`chore: promoter demo churn …`** for a conventional style only; promotion is not gated on that text in this demo.
 
 If **`githubAppInstallationID`** is omitted from the Secret, the script discovers an installation that can access the repo from **`url`** (first match). If your default branch is not **`main`**, patch **`manifests/demo-churn/cronjob.yaml`** env **`GITHUB_DEFAULT_BRANCH`**. The job stays **Pending**/**Error** until the hydrator write **`Secret`** exists.
 
@@ -545,7 +536,7 @@ You should see these namespaces/components coming up:
 
 ## 12. GitOps Promoter: GitHub App, sealed credentials, and Git repository
 
-The bootstrap install includes **`Application/monitoring`** (wave **1**) so Prometheus Operator CRDs exist before the controller (**`apps/gitops-promoter.yaml`**, wave **3**) creates its **`ServiceMonitor`**. It also includes the **`promoter-config`** Application (wave **4**), which syncs **`promoter-config/`** recursively into **`gitops-promoter`**. Until you add a real GitHub App and secret, **`ScmProvider`** and friends will not be able to talk to GitHub.
+The bootstrap install includes **`Application/monitoring`** (wave **1**) so Prometheus Operator CRDs exist before the controller (**`Application/gitops-promoter`** from **`charts/apps`**, wave **3**) creates its **`ServiceMonitor`**. It also includes the **`promoter-config`** Application (wave **4**), which syncs **`promoter-config/`** recursively into **`gitops-promoter`**. Until you add a real GitHub App and secret, **`ScmProvider`** and friends will not be able to talk to GitHub.
 
 Official reference: [GitOps Promoter getting started](https://gitops-promoter.readthedocs.io/en/latest/getting-started/) (permissions, `Secret` shape, `ScmProvider` / `GitRepository`).
 
@@ -617,17 +608,16 @@ Push; after sync, **`kubectl -n gitops-promoter get sealedsecret,secret,scmprovi
 A clean sequence is:
 
 1. **Bootstrap commit**
-   - `apps/` (includes **`apps/demo-churn.yaml`**; Argo / Promoter sealed files can land in follow-up commits under **`charts/argocd/templates/`** and **`charts/gitops-promoter/templates/`**)
-   - `charts/`
+   - `apps/root-app.yaml` and **`charts/apps/`** (Helm chart of child **`Application`**s; Argo / Promoter sealed files can land in follow-up commits under **`charts/argocd/templates/`** and **`charts/gitops-promoter/templates/`**)
+   - `charts/` (other umbrella charts)
    - `manifests/` (including **`manifests/demo-churn/`** once you add the demo churn stack)
 2. **Promoter config + secrets commit**
-   - `apps/promoter-config.yaml`
-   - `promoter-config/` (CRs only; **`charts/gitops-promoter/templates/github-app-credentials.sealed.yaml`** when the GitHub App exists)
+   - `promoter-config/` (CRs only; **`charts/gitops-promoter/templates/github-app-credentials.sealed.yaml`** when the GitHub App exists; wire via **`Application/promoter-config`** in **`charts/apps`**)
    - other sealed secrets as needed under **`charts/argocd/templates/`** (webhook, Dex, hydrator write)
 3. **Demo workloads commit**
-   - `demo-apps/guestbook/` and **`apps/guestbook-dev.yaml`**, **`apps/guestbook-e2e.yaml`**, **`apps/guestbook-prd.yaml`**
+   - `demo-apps/guestbook/` and guestbook **`Application`** templates under **`charts/apps/templates/`**
 4. **Monitoring commit**
-   - `apps/monitoring.yaml` and **`charts/monitoring/`** (run **`helm dependency build`**; **`grafana-github-oauth.sealed.yaml`** is tied to this cluster’s Sealed Secrets key)
+   - **`charts/monitoring/`** and the **`Application/monitoring`** template in **`charts/apps`** (run **`helm dependency build`**; **`grafana-github-oauth.sealed.yaml`** is tied to this cluster’s Sealed Secrets key)
 
 This keeps the cluster bring-up simple and avoids introducing broken credentials too early.
 

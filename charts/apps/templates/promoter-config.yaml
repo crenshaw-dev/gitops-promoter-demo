@@ -1,17 +1,18 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: gitops-promoter
+  name: promoter-config
   namespace: argocd
   annotations:
-    # After monitoring (1) so Prometheus Operator CRDs exist for ServiceMonitor.
-    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-wave: "4"
 spec:
   project: default
   source:
-    repoURL: https://github.com/crenshaw-dev/gitops-promoter-demo
+    repoURL: {{ .Values.repoURL | quote }}
     targetRevision: HEAD
-    path: charts/gitops-promoter
+    path: promoter-config
+    directory:
+      recurse: true
   destination:
     server: https://kubernetes.default.svc
     namespace: gitops-promoter
@@ -21,4 +22,3 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-

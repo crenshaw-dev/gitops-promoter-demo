@@ -20,15 +20,16 @@ Public-style demo that runs **[GitOps Promoter](https://gitops-promoter.readthed
 
 ## What gets installed
 
-Foundations in **`apps/`**: Argo CD (Dex + GitHub OAuth wiring in values), cert-manager, ingress-nginx, Sealed Secrets, monitoring, GitOps Promoter, **`demo-config`** (hydrated manifests + Promoter CRs), guestbook **Application**s, demo churn **CronJob**, etc. Exact versions: [SETUP.md — Version pins](SETUP.md#version-pins-currently-used).
+Child **Application**s are defined as a Helm chart under **`charts/apps/`** (one **`repoURL`** in **`values.yaml`**; bootstrap **`apps/root-app.yaml`** points at that chart). They install Argo CD (Dex + GitHub OAuth wiring in values), cert-manager, ingress-nginx, Sealed Secrets, monitoring, GitOps Promoter, **`demo-config`**, guestbook envs, demo churn **CronJob**, etc. Exact versions: [SETUP.md — Version pins](SETUP.md#version-pins-currently-used).
 
 ## Repository layout (short)
 
 | Path | Role |
 |------|------|
-| **`apps/`** | Argo CD `Application` manifests |
+| **`apps/`** | Bootstrap **`root-app`** only |
+| **`charts/apps/`** | Helm chart: all other Argo CD **`Application`**s (**`repoURL`** in **`values.yaml`**) |
 | **`demo-apps/guestbook/`** | In-tree Helm chart; hydrator writes rendered trees to **`hydrated/guestbook-*`** on **`env/<env>-next`** |
-| **`charts/`** | Umbrella charts: **argocd**, **gitops-promoter**, **monitoring** (+ sealed templates) |
+| **`charts/`** | Umbrella charts: **apps** (Argo child apps), **argocd**, **gitops-promoter**, **monitoring** (+ sealed templates) |
 | **`manifests/demo-churn/`** | CronJob that bumps **`demoChurn.lastBumped`** via GitHub API |
 | **`promoter-config/`** | `PromotionStrategy`, `GitRepository`, `ScmProvider`, commit-status controllers |
 | **`infra/gcp/`** | Terraform, helper scripts |

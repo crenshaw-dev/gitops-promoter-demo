@@ -1,32 +1,33 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: guestbook-prd
+  name: guestbook-dev
   namespace: argocd
   labels:
     app.kubernetes.io/name: guestbook
-    guestbook-env: prd
+    guestbook-env: dev
   annotations:
     argocd.argoproj.io/sync-wave: "5"
 spec:
   project: default
+  # In-tree Helm chart; hydrator reads/writes this same repo (dry on HEAD, rendered on env/* branches).
   sourceHydrator:
     drySource:
-      repoURL: https://github.com/crenshaw-dev/gitops-promoter-demo
+      repoURL: {{ .Values.repoURL | quote }}
       targetRevision: HEAD
       path: demo-apps/guestbook
       helm:
-        releaseName: guestbook-prd
+        releaseName: guestbook-dev
         valueFiles:
-          - env/prd/values.yaml
+          - env/dev/values.yaml
     syncSource:
-      targetBranch: env/prd
-      path: hydrated/guestbook-prd
+      targetBranch: env/dev
+      path: hydrated/guestbook-dev
     hydrateTo:
-      targetBranch: env/prd-next
+      targetBranch: env/dev-next
   destination:
     server: https://kubernetes.default.svc
-    namespace: guestbook-prd
+    namespace: guestbook-dev
   syncPolicy:
     automated:
       prune: true

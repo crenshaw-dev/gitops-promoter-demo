@@ -6,12 +6,10 @@ metadata:
 spec:
   project: default
   source:
+    # Clone URL for this repository; must match charts/apps/values.yaml (repoURL).
     repoURL: https://github.com/crenshaw-dev/gitops-promoter-demo
     targetRevision: HEAD
-    path: apps
-    directory:
-      recurse: false
-      exclude: root-app.yaml
+    path: charts/apps
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
