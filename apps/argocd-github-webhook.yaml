@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-github-webhook
+  namespace: argocd
+  annotations:
+    # After sealed-secrets (0) and Argo CD (1); decodes to Secret used by the API server.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/crenshaw-dev/gitops-promoter-demo
+    targetRevision: HEAD
+    path: manifests/argocd-github-webhook
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

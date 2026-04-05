@@ -32,14 +32,14 @@ Later commits can add:
 - GitHub App credentials
 - GitOps Promoter `ScmProvider`, `GitRepository`, and `PromotionStrategy` resources
 - demo workload repository wiring
-- webhook secrets
+- **`manifests/argocd-github-webhook/argocd-github-webhook.sealed.yaml`** for the Argo CD Git webhook HMAC when using push-to-sync (see **§8**)
 - monitoring and dashboards
 
 ## Repository layout
 
 - `apps/`: Argo CD `Application` objects
 - `charts/`: umbrella charts and Helm values (each chart may include `Chart.lock` from `helm dependency build`)
-- `manifests/`: raw Kubernetes manifests applied by Argo CD
+- `manifests/`: raw Kubernetes manifests applied by Argo CD (top-level YAML is synced by **`demo-config`** into `gitops-promoter`; **`manifests/argocd-github-webhook/`** is synced by **`argocd-github-webhook`** into `argocd`)
 - `promoter-config/`: GitOps Promoter CRs
 - `infra/gcp/terraform/`: Terraform for GCP networking and GKE
 - `infra/gcp/check-prereqs.sh`: local environment check script
@@ -49,6 +49,7 @@ Later commits can add:
 ## Conventions
 
 - Argo CD applications use **single-source** `spec.source`, not multi-source apps.
+- Every `Application` under `apps/` uses **automated** sync with **`prune: true`** and **`selfHeal: true`** (including `root-app`).
 - Helm deployments come from **in-repo umbrella charts**.
 - Environment-specific values should live in ignored local files such as `terraform.tfvars`, not in committed source.
 - **GitOps first:** change the cluster by committing to this repository and letting Argo CD sync. Avoid `kubectl apply`, `kubectl patch`, or ad-hoc edits to workloads except in a real break-glass situation (for example, Argo CD cannot reconcile and you need a one-time repair).
@@ -91,6 +92,7 @@ At minimum, update:
 - `apps/ingress-nginx.yaml`
 - `apps/sealed-secrets.yaml`
 - `apps/demo-config.yaml`
+- `apps/argocd-github-webhook.yaml`
 - `apps/gitops-promoter.yaml`
 - `charts/argocd/values.yaml`
 - `charts/gitops-promoter/values.yaml`
@@ -274,6 +276,71 @@ kubectl apply -f apps/root-app.yaml
 
 That causes Argo CD to begin reconciling the applications under `apps/`.
 
+### Git webhooks (sync soon after you push)
+
+By default Argo CD **polls** Git about every **three minutes**. To refresh as soon as GitHub (or another provider) receives your push, expose the Argo CD API over **HTTPS** and register a **repository webhook** that calls Argo CD’s **`/api/webhook`** endpoint. See the upstream [Git webhook configuration](https://argo-cd.readthedocs.io/en/stable/operator-manual/webhook/) guide for full detail and other SCMs (GitLab, Bitbucket, Azure DevOps, Gogs).
+
+**Prerequisites**
+
+- DNS and TLS for your Argo CD hostname work (this demo: **`https://demo.<your-domain>`**).
+- GitHub (or your host) can reach that URL from the public internet.
+
+**1. Choose a shared secret**
+
+Generate a random string (example):
+
+```bash
+openssl rand -base64 32
+```
+
+You will use the same value in GitHub and in the cluster.
+
+**2. Add the webhook in GitHub**
+
+In the GitHub repository that Argo CD reads (your fork of this demo repo, or any repo backing an Application):
+
+1. **Settings** → **Webhooks** → **Add webhook**
+2. **Payload URL:** `https://demo.<your-domain>/api/webhook` (use your real Argo CD host; path must be **`/api/webhook`**)
+3. **Content type:** **`application/json`** (required; the default form encoding is not supported)
+4. **Secret:** paste the value from step 1
+5. **Events:** enable **Just the push event** (or restrict to pushes only)
+
+Save the webhook. GitHub may show a failed delivery until the sealed manifest in the next section is synced.
+
+**3. Seal the shared secret and commit it (Sealed Secrets only)**
+
+Helm in this repo sets **`webhook.github.secret`** on **`argocd-secret`** to the indirection string **`$argocd-github-webhook:githubWebhookSecret`**. Argo CD resolves that at runtime from a normal **`Secret`** named **`argocd-github-webhook`** in **`argocd`**, as in the upstream [webhook “Alternative”](https://argo-cd.readthedocs.io/en/stable/operator-manual/webhook/#alternative) docs. That **`Secret`** must have label **`app.kubernetes.io/part-of: argocd`** and data key **`githubWebhookSecret`** holding the same value you configured in GitHub.
+
+**Where to put the sealed manifest (this is the only supported path in this repo)**
+
+1. From the **repository root**, run **`kubeseal`** (replace the placeholder secret). The Bitnami chart in **`charts/sealed-secrets`** exposes the controller as Service **`sealed-secrets`** in **`kube-system`**, not the `kubeseal` default **`sealed-secrets-controller`**, so the controller flags are required.
+
+```bash
+kubectl create secret generic argocd-github-webhook -n argocd \
+  --from-literal=githubWebhookSecret='PASTE_THE_SAME_SECRET_AS_GITHUB' \
+  --dry-run=client -o yaml \
+  | kubectl label --local --dry-run=client -f - app.kubernetes.io/part-of=argocd -o yaml \
+  | kubeseal \
+      --controller-name sealed-secrets \
+      --controller-namespace kube-system \
+      -o yaml -n argocd \
+      -w manifests/argocd-github-webhook/argocd-github-webhook.sealed.yaml
+```
+
+2. Commit **`manifests/argocd-github-webhook/argocd-github-webhook.sealed.yaml`** and push to the branch **`root-app`** tracks.
+
+The **`Application/argocd-github-webhook`** in **`apps/argocd-github-webhook.yaml`** (picked up by the app-of-apps) syncs **`manifests/argocd-github-webhook/`** into **`argocd`** with **automated** sync and **self-heal**, so the decoded **`Secret`** appears without **`kubectl apply`**. Until you add that file, the app simply manages an empty directory; after you push the sealed manifest, the next sync creates the **`Secret`** and GitHub deliveries can verify.
+
+If you omit the webhook secret entirely, hooks can still trigger a refresh, but Argo CD cannot verify the sender; for a **public** URL, configuring the secret is **strongly recommended** (see the upstream docs).
+
+**4. Verify**
+
+Push a trivial commit to the tracked branch. In the Argo CD UI, the Application should move to **Refreshing** quickly instead of waiting for the poll interval. In GitHub, open the webhook’s **Recent Deliveries** and confirm **`200`** responses.
+
+**Not the GitOps Promoter webhook**
+
+This section is only for **Argo CD’s** Git notification endpoint (`/api/webhook` on the Argo CD host). **GitOps Promoter** uses a separate hostname (this demo: **`promoter-webhook.<your-domain>`**) and its own ingress—do not point the Argo CD Git webhook at that URL.
+
 ## 9. Access the Argo CD UI
 
 Get the initial admin password:
@@ -359,7 +426,7 @@ Before promotions can work end-to-end, you still need to:
 3. Initialize the environment branches.
 4. Seal GitHub App credentials into Kubernetes.
 5. Commit the `promoter-config/` resources and any sealed secrets.
-6. Re-enable webhook secret configuration if desired.
+6. If you use push-to-sync, seal and commit **`manifests/argocd-github-webhook/argocd-github-webhook.sealed.yaml`** (**§8**).
 
 Relevant files:
 
@@ -369,18 +436,20 @@ Relevant files:
 - `promoter-config/promotion-strategy.yaml`
 - `promoter-config/commit-statuses/*`
 
+Argo CD integrations from the [GitOps Promoter docs](https://gitops-promoter.readthedocs.io/en/latest/argocd-integrations/) (UI extension installer, `resource.links` for PR deep links, `resource.customLabels` for commit-status keys) live in **`charts/argocd/values.yaml`**. If a PromotionStrategy is **not** top-level in an Application’s resource tree, add **`promoter.argoproj.io/has-promotionstrategy: "true"`** on that Application so the extension tab appears.
+
 ## 13. Suggested first commits
 
 A clean sequence is:
 
 1. **Bootstrap commit**
-   - `apps/`
+   - `apps/` (includes **`apps/argocd-github-webhook.yaml`**; the webhook sealed file can land in a follow-up commit)
    - `charts/`
    - `manifests/`
 2. **Promoter config + secrets commit**
    - `apps/promoter-config.yaml`
    - `promoter-config/`
-   - sealed secret manifests
+   - sealed secret manifests (for example **`manifests/argocd-github-webhook/argocd-github-webhook.sealed.yaml`** when you enable the Argo CD Git webhook)
 3. **Monitoring and demo workloads commit**
 
 This keeps the cluster bring-up simple and avoids introducing broken credentials too early.
@@ -391,7 +460,7 @@ Bootstrap charts are currently pinned to:
 
 - Argo CD `9.4.17`
 - cert-manager `1.20.1`
-- GitOps Promoter `0.5.1`
+- GitOps Promoter `0.5.1` (Helm chart; Argo CD UI extension bundle **`v0.25.1`** per [GitOps Promoter Argo CD integrations](https://gitops-promoter.readthedocs.io/en/latest/argocd-integrations/))
 - ingress-nginx `4.15.1`
 - sealed-secrets `2.18.4`
 

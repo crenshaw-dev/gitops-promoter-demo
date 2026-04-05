@@ -9,13 +9,13 @@ This document captures the cloud assumptions for the demo instance on Google Clo
 - DNS: Provider-managed DNS zone for demo hostnames
 - TLS: cert-manager using ACME HTTP-01 via ingress-nginx
 - Ingress: ingress-nginx (to stay close to the existing plan), with cert-manager **CA injection** for the ingress admission `ValidatingWebhookConfiguration` so `clientConfig.caBundle` stays populated under GitOps
-- Secrets at rest in Git: Sealed Secrets
+- Secrets at rest in Git: Sealed Secrets (including the Argo CD Git webhook HMAC via a companion `Secret` and indirection — see README, Git webhooks)
 - Workload identity: GKE Workload Identity for in-cluster controllers
 
 ## Public endpoints
 
-- `demo.gitops-promoter.dev`: Argo CD UI
-- `promoter-webhook.gitops-promoter.dev`: GitOps Promoter webhook receiver
+- `demo.gitops-promoter.dev`: Argo CD UI and API (including **`/api/webhook`** for [Git webhooks](https://argo-cd.readthedocs.io/en/stable/operator-manual/webhook/) when configured)
+- `promoter-webhook.gitops-promoter.dev`: GitOps Promoter webhook receiver (separate from Argo CD’s Git webhook)
 - `grafana.gitops-promoter.dev`: public read-only dashboard
 
 ## Open implementation decisions
