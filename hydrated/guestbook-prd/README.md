@@ -5,6 +5,6 @@ To hydrate the manifests in this repository, run the following commands:
 ```shell
 git clone https://github.com/crenshaw-dev/gitops-promoter-demo
 # cd into the cloned directory
-git checkout c682d8088fa66a6dc28c6d1af7d9e460160443ed
+git checkout 4d29298cb6f2824d060f631e514b9826f14b3ebb
 helm template . --name-template guestbook-prd --namespace guestbook-prd --values ./demo-apps/guestbook/env/prd/values.yaml --include-crds
 ```
